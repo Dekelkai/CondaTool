@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { confirm, save, open, message } from "@tauri-apps/plugin-dialog";
@@ -204,7 +204,7 @@ function App() {
       await message(`环境 "${trimmedNewName}" 已存在，请使用其他名称。`, { title: '重命名失败' });
       return;
     }
-    runCommand('env-rename', ['--old-name', oldName, '--new-name', trimmedNewName]);
+    runCommand('env-rename', ['--old-prefix', env.path, '--new-name', trimmedNewName]);
   };
 
   const handleCloneEnv = async (env: Environment) => {
@@ -222,7 +222,7 @@ function App() {
       await message(`环境 "${trimmedDestName}" 已存在，请使用其他名称。`, { title: '克隆失败' });
       return;
     }
-    runCommand('env-clone', ['--source-name', sourceName, '--dest-name', trimmedDestName]);
+    runCommand('env-clone', ['--source-prefix', env.path, '--dest-name', trimmedDestName]);
   };
 
   const openExportModal = (env: Environment) => {

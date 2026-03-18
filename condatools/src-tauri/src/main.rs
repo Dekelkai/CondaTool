@@ -5,15 +5,17 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
-use tauri::{Emitter, Window};
+use tauri::{Emitter, Window, Manager};
 
 #[tauri::command]
 fn run_python_dev(window: Window, args: Vec<String>) -> Result<(), String> {
-    // 用 CARGO_MANIFEST_DIR（指向 src-tauri）定位到项目根的 backend/main.py
-    let script_path: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../backend/main.py")
-        .canonicalize()
-        .map_err(|_| "Python script not found: ../backend/main.py (from src-tauri)".to_string())?;
+    let resource_dir = window
+        .app_handle()
+        .path()
+        .resource_dir()
+        .map_err(|_| "Failed to resolve resource directory".to_string())?;
+        
+    let script_path = resource_dir.join("backend").join("main.py");
 
     if !script_path.exists() {
         return Err(format!("Python script not found: {:?}", script_path));

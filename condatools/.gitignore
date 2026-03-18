@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Python & Build artifacts
+build/
+*.zip
+*.spec
