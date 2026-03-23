@@ -1,0 +1,8 @@
+# CondaTool backend minimal Python requirements
+# ------------------------------------------------------------------
+# This backend currently uses only Python standard library modules.
+# So there are no third-party pip packages required at this moment.
+#
+# Recommended runtime:
+# - Python 3.10+ (tested with Python 3.12)
+# - Conda/Miniconda installed and available in PATH

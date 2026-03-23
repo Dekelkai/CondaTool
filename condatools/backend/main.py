@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import argparse
-from txk_conda.commands import (
+from CondaTool_conda.commands import (
     cmd_probe, cmd_env_list, cmd_pkg_list, cmd_env_create,
     cmd_env_remove, cmd_env_rename, cmd_env_export,
     cmd_env_import, cmd_env_clone
 )
 
 def main():
-    parser = argparse.ArgumentParser(prog="txk-backend")
+    parser = argparse.ArgumentParser(prog="CondaTool-backend")
     sub = parser.add_subparsers(dest="command", required=True)
     
     # Environment info

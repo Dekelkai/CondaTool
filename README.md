@@ -1,46 +1,103 @@
-# TXK-Tools: Conda 环境管理器
+# CondaTool
 
-一个使用 [Tauri](https://tauri.app/) + React + Python 构建的现代化、轻量级的 Conda 环境桌面管理工具。
+CondaTool 是一个基于 [Tauri](https://tauri.app/) + React + Python 的桌面 GUI 工具，用于管理本机 Conda/Miniconda 环境。
 
-本工具旨在提供一个比命令行更直观、更易于操作的图形用户界面，来管理你的 Conda 环境和包。它直接调用您本地的 Conda 安装，确保所有操作都与您在终端中的操作一致。
-
-
-
----
+它面向希望减少命令行操作成本的用户，提供可视化的环境管理、包查看与导入导出能力。
 
 ## ✨ 当前功能
 
-这个项目目前处于早期开发阶段，但已经实现了一套核心功能：
+- **Conda 自动探测**
+- **缺少 Conda/Miniconda 的友好提示**
+- **环境管理**：创建、删除、克隆、重命名
+- **环境导入/导出**：支持 `yml` / `txt`
+- **包列表与搜索**
+- **中英文界面切换**
+- **浅色/深色/跟随系统主题**
+- **实时日志输出**
 
-- **✅ Conda 自动探测**: 应用启动时自动检测系统中的 Conda 是否可用。
-- **✅ 环境列表与详情**:
-    - 加载并展示所有可用的 Conda 环境。
-    - 并行获取每个环境的 Python 版本，提高加载速度。
-    - 特殊高亮并置顶显示 `base` 环境。
-- **✅ 环境管理**:
-    - **创建**: 根据指定的名称和 Python 版本创建新的 Conda 环境。
-    - **重命名**: 安全地重命名一个环境（通过克隆-删除策略实现）。
-    - **删除**: 从磁盘上彻底删除一个环境（带有危险操作确认）。
-- **✅ 包列表查看**:
-    - 选择任意环境后，可查看其中已安装的所有包及其版本、构建和渠道信息。
-    - 提供实时搜索功能，快速筛选包列表。
-- **✅ 实时日志**: 所有后端执行的 `conda` 命令及其输出都会实时显示在日志窗口中，方便追踪和调试。
+## 🧩 缺少 Conda 时的行为
 
-## 🚀 待办事项 (Planned Features)
-
-我计划在未来为这个工具添加更多强大的功能，这将是接下来的开发重点。如果你有兴趣，可以关注这些功能的实现！
-
-- [ ] **环境导入与导出**
-    - 从 `environment.yml` 文件导入环境。
-    - 将现有环境导出为 `environment.yml` 文件，方便分享和复现。
-- [ ] **Jupyter Notebook 配置管理**
-    - 扫描环境，自动为包含 `ipykernel` 的环境创建 Jupyter 内核。
-    - 提供一个界面来管理这些内核（例如，删除过时的内核）。
-- [ ] ...
+当系统中未检测到 Conda/Miniconda 时，应用会弹出安装引导，而不是直接硬错误中断。弹窗内提供官方安装链接，并通过系统浏览器打开。
 
 ## 🛠️ 技术栈
 
-- **桌面应用框架**: [Tauri](https://tauri.app/)
-- **前端**: [React](https://reactjs.org/) + [TypeScript](https://www.typescriptlang.org/) + [Vite](https://vitejs.dev/)
-- **后端**: [Python](https://www.python.org/) (作为 `conda` 命令的封装和调用器)
-- **核心通信**: Tauri 的 `Sidecar` 模式，通过 `STDIO` 在前端和后端 Python 脚本之间传递 JSON 消息和事件。
+- **桌面框架**: Tauri v2
+- **前端**: React + TypeScript + Vite
+- **后端**: Python（调用本机 `conda` 命令）
+- **桥接层**: Rust（Tauri Command + 进程管道）
+
+## 📁 项目结构
+
+- `condatools/src/`：前端 UI
+- `condatools/src-tauri/`：Tauri/Rust
+- `condatools/backend/`：Python 后端命令封装
+
+## 🚀 本地开发
+
+1. 进入项目目录：
+   ```bash
+   cd condatools
+   ```
+2. 安装依赖：
+   ```bash
+   npm install
+   ```
+3. 启动开发模式：
+   ```bash
+   npm run tauri dev
+   ```
+
+## 🐍 Python 环境复现
+
+后端入口在 `condatools/backend/main.py`，当前仅依赖 Python 标准库。
+
+1. 创建并激活 Python 环境（示例使用 Conda）：
+   ```bash
+   conda create -n condatool-dev python=3.12 -y
+   conda activate condatool-dev
+   ```
+2. 安装后端 requirements（目前无第三方包，主要用于统一入口）：
+   ```bash
+   pip install -r condatools/backend/requirements.txt
+   ```
+3. 可选：将该 Python 显式绑定给桌面应用（避免系统 Python 混乱）：
+   在 `condatools/.env` 中添加：
+   ```env
+   VITE_CONDATOOL_PYTHON=C:\path\to\python.exe
+   ```
+4. 重新运行：
+   ```bash
+   cd condatools
+   npm run tauri dev
+   ```
+
+## 🔧 调试环境变量（可选）
+
+- `VITE_FORCE_NO_CONDA=1`
+  
+  强制模拟“未安装 Conda”场景，用于测试安装引导弹窗。
+
+- `VITE_CONDATOOL_PYTHON=绝对路径`
+  
+  指定后端启动 Python 解释器路径，避免系统 `python` 指向异常解释器（如某些 GIS 内置 Python）。
+
+## 📦 构建
+
+```bash
+npm run build
+```
+
+如需打包桌面应用：
+
+```bash
+npm run tauri build
+```
+
+## 🚧 待办事项
+
+- [ ] UI 优化
+- [ ] 包安装与卸载（按环境执行）
+- [ ] Conda 源管理（查看/新增/删除/优先级调整）
+- [ ] 常用源模板（一键切换官方源/社区源）
+- [ ] Jupyter Kernel 管理
+- [ ] 更完善的错误分级与引导

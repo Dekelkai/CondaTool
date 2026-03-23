@@ -1,102 +1,361 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { confirm, save, open, message } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExportModal } from "./ExportModal";
+import "./App.css";
 
-// --- 接口定义 ---
 interface CondaInfo {
   conda_version: string;
   python_version: string;
   root_prefix: string;
 }
+
 interface Environment {
   path: string;
   python_version: string;
 }
+
 interface Package {
   name: string;
   version: string;
   build: string;
   channel: string;
 }
+type ThemeMode = "light" | "dark" | "system";
+type Locale = "zh" | "en";
 
-// --- 图标组件 ---
-const CloneIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>;
-const ExportIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
-const RenameIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const RemoveIcon = () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>;
+const i18n = {
+  zh: {
+    appSubtitle: "Conda 环境桌面管理器",
+    themeLight: "浅色",
+    themeDark: "深色",
+    themeSystem: "跟随系统",
+    refreshEnv: "刷新环境",
+    featureGuide: "功能说明",
+    importEnv: "导入环境",
+    createEnv: "新建环境",
+    running: "执行中",
+    simulated: "模拟模式: 无 Conda",
+    errorPrefix: "错误",
+    panelEnv: "环境",
+    loadingEnvs: "正在加载环境...",
+    noEnvs: "暂无环境，点击顶部“刷新环境”。",
+    clone: "克隆",
+    export: "导出",
+    rename: "重命名",
+    remove: "删除",
+    panelPkg: "包列表",
+    noSelectedEnv: "未选择环境",
+    searchPkg: "搜索包名...",
+    selectEnvHint: "请先在左侧选择一个环境。",
+    loadingPkgs: "正在加载包列表...",
+    noMatchedPkg: "没有匹配的包。",
+    name: "名称",
+    version: "版本",
+    channel: "渠道",
+    panelLog: "日志",
+    clear: "清空",
+    startupProbe: "应用启动，自动探测 Conda...",
+    condaMissingTitle: "未检测到 Conda 或 Miniconda",
+    condaMissingDesc1: "CondaTool 依赖 Conda 生态来创建、克隆、导入导出和管理 Python 环境。当前系统中未检测到可用的 Conda 命令，请先安装。",
+    condaMissingDesc2: "Conda 是环境与包管理工具；Miniconda 是轻量发行版，安装更快，占用更小。",
+    installConda: "安装 Conda (官方)",
+    installMiniconda: "安装 Miniconda (官方)",
+    understood: "我已了解",
+    featureTitle: "CondaTool 功能说明",
+    featureDesc: "CondaTool 面向需要可视化管理 Conda 环境的开发者与数据工作者，核心目标是减少命令行操作成本，提升环境管理效率。",
+    featureItem1: "自动探测本机 Conda/Miniconda 与 base 环境状态。",
+    featureItem2: "图形化管理环境：创建、删除、克隆、重命名。",
+    featureItem3: "查看并搜索指定环境下的已安装包与版本信息。",
+    featureItem4: "支持环境导入/导出（`yml` / `txt`），便于共享与复现。",
+    featureItem5: "实时日志追踪后台命令执行过程，便于排查问题。",
+    featureFlow: "推荐流程：先刷新环境列表，选择目标环境查看包信息，再进行创建/克隆/导入导出等操作。",
+    closeGuide: "关闭说明",
+    createPrompt: "请输入新环境名称:",
+    createFailTitle: "创建失败",
+    nameExists: (name: string) => `环境 \"${name}\" 已存在，请使用其他名称。`,
+    pythonPrompt: "请输入 Python 版本 (例如 3.10):",
+    removeConfirmTitle: "删除确认",
+    removeConfirm: (name: string) => `确认删除环境 \"${name}\" ?\n该操作不可恢复。`,
+    renamePrompt: (oldName: string) => `请输入环境 \"${oldName}\" 的新名称:`,
+    renameFailTitle: "重命名失败",
+    clonePrompt: (sourceName: string) => `请输入克隆环境 \"${sourceName}\" 的新名称:`,
+    cloneFailTitle: "克隆失败",
+    cloneNameSame: "新环境名称不能与源环境相同。",
+    exportTitle: (format: string) => `导出环境为 ${format}`,
+    importTitle: "从文件导入环境",
+    importPrompt: "请输入导入后新环境名称:",
+    importFailTitle: "导入失败",
+    envFile: "环境文件",
+    cannotOpenLink: "无法打开链接",
+    condaMissingError: "未检测到 Conda/Miniconda，请先安装后再使用本工具。",
+    themeAria: "主题切换",
+    langAria: "语言切换",
+  },
+  en: {
+    appSubtitle: "Desktop Conda Environment Manager",
+    themeLight: "Light",
+    themeDark: "Dark",
+    themeSystem: "System",
+    refreshEnv: "Refresh Environments",
+    featureGuide: "Feature Guide",
+    importEnv: "Import",
+    createEnv: "New Environment",
+    running: "Running",
+    simulated: "Simulation Mode: No Conda",
+    errorPrefix: "Error",
+    panelEnv: "Environments",
+    loadingEnvs: "Loading environments...",
+    noEnvs: "No environments. Click \"Refresh Environments\".",
+    clone: "Clone",
+    export: "Export",
+    rename: "Rename",
+    remove: "Delete",
+    panelPkg: "Packages",
+    noSelectedEnv: "No environment selected",
+    searchPkg: "Search package...",
+    selectEnvHint: "Select an environment from the left panel first.",
+    loadingPkgs: "Loading packages...",
+    noMatchedPkg: "No matched packages.",
+    name: "Name",
+    version: "Version",
+    channel: "Channel",
+    panelLog: "Logs",
+    clear: "Clear",
+    startupProbe: "App started. Probing Conda...",
+    condaMissingTitle: "Conda or Miniconda Not Detected",
+    condaMissingDesc1: "CondaTool relies on Conda to create, clone, import/export, and manage Python environments. No available Conda command was detected on this system.",
+    condaMissingDesc2: "Conda is an environment and package manager. Miniconda is a lightweight distribution with a smaller footprint.",
+    installConda: "Install Conda (Official)",
+    installMiniconda: "Install Miniconda (Official)",
+    understood: "Got it",
+    featureTitle: "CondaTool Feature Guide",
+    featureDesc: "CondaTool is designed for developers and data professionals who need visual management for Conda environments, reducing command-line overhead and improving efficiency.",
+    featureItem1: "Automatically detect local Conda/Miniconda and base environment status.",
+    featureItem2: "Manage environments visually: create, delete, clone, and rename.",
+    featureItem3: "View and search installed packages and versions in any selected environment.",
+    featureItem4: "Import/export environments (`yml` / `txt`) for sharing and reproducibility.",
+    featureItem5: "Track backend command execution through real-time logs for troubleshooting.",
+    featureFlow: "Recommended flow: refresh environments first, select a target environment, inspect packages, then perform create/clone/import/export actions.",
+    closeGuide: "Close",
+    createPrompt: "Enter new environment name:",
+    createFailTitle: "Create Failed",
+    nameExists: (name: string) => `Environment \"${name}\" already exists. Please choose another name.`,
+    pythonPrompt: "Enter Python version (for example 3.10):",
+    removeConfirmTitle: "Delete Confirmation",
+    removeConfirm: (name: string) => `Delete environment \"${name}\"?\nThis action cannot be undone.`,
+    renamePrompt: (oldName: string) => `Enter a new name for \"${oldName}\":`,
+    renameFailTitle: "Rename Failed",
+    clonePrompt: (sourceName: string) => `Enter a new name for cloned env \"${sourceName}\":`,
+    cloneFailTitle: "Clone Failed",
+    cloneNameSame: "New name cannot be the same as source environment.",
+    exportTitle: (format: string) => `Export Environment as ${format}`,
+    importTitle: "Import Environment from File",
+    importPrompt: "Enter the imported environment name:",
+    importFailTitle: "Import Failed",
+    envFile: "Environment File",
+    cannotOpenLink: "Cannot open link",
+    condaMissingError: "Conda/Miniconda was not detected. Please install it before using this app.",
+    themeAria: "Theme switch",
+    langAria: "Language switch",
+  },
+} as const;
+
+const CloneIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+  </svg>
+);
+
+const ExportIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+const RenameIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+
+const RemoveIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <line x1="10" y1="11" x2="10" y2="17" />
+    <line x1="14" y1="11" x2="14" y2="17" />
+  </svg>
+);
 
 function App() {
-  // --- 状态管理 ---
   const [logs, setLogs] = useState<string[]>([]);
   const [running, setRunning] = useState<string | null>(null);
   const [condaInfo, setCondaInfo] = useState<CondaInfo | null>(null);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showCondaInstallGuide, setShowCondaInstallGuide] = useState(false);
   const [selectedEnvPath, setSelectedEnvPath] = useState<string | null>(null);
   const [packages, setPackages] = useState<Package[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportingEnv, setExportingEnv] = useState<Environment | null>(null);
+  const [showFeatureGuide, setShowFeatureGuide] = useState(false);
+  const [locale, setLocale] = useState<Locale>(() => {
+    const saved = localStorage.getItem("condatool-locale");
+    return saved === "en" || saved === "zh" ? saved : "zh";
+  });
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem("condatool-theme-mode");
+    return saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
+  });
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches;
+  });
+
   const subscribed = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  // --- 效果钩子 ---
+  const forceNoConda = String(import.meta.env.VITE_FORCE_NO_CONDA || "").toLowerCase();
+  const isForceNoConda = forceNoConda === "1" || forceNoConda === "true";
+  const configuredPython = String(import.meta.env.VITE_CONDATOOL_PYTHON || "").trim();
+  const effectiveTheme = themeMode === "system" ? (systemPrefersDark ? "dark" : "light") : themeMode;
+  const t = i18n[locale];
+
+  const getEnvName = (fullPath: string) => fullPath.split(/[\\/]/).pop() || fullPath;
+
+  const isCondaMissingError = (rawError: string | null | undefined) => {
+    if (!rawError) return false;
+    return /conda not found|not found in path|is not recognized/i.test(rawError);
+  };
+
+  const handleCommandError = (rawError: string) => {
+    if (isCondaMissingError(rawError)) {
+      setError(t.condaMissingError);
+      setShowCondaInstallGuide(true);
+      return;
+    }
+    setError(rawError);
+  };
+
+  const openExternalLink = async (url: string) => {
+    try {
+      await openUrl(url);
+    } catch (e: any) {
+      setError(`${t.cannotOpenLink}: ${String(e)}`);
+    }
+  };
+
+  const handleThemeModeChange = (mode: ThemeMode) => {
+    setThemeMode(mode);
+    localStorage.setItem("condatool-theme-mode", mode);
+  };
+
+  const handleLocaleChange = (nextLocale: Locale) => {
+    setLocale(nextLocale);
+    localStorage.setItem("condatool-locale", nextLocale);
+  };
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches);
+    setSystemPrefersDark(media.matches);
+    media.addEventListener("change", handler);
+    return () => media.removeEventListener("change", handler);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", effectiveTheme);
+  }, [effectiveTheme]);
+
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
   }, [logs]);
 
+  const runCommand = async (command: string, extraArgs: string[] = []) => {
+    if (running) return;
+
+    const finalArgs = [command, ...extraArgs].filter((arg) => arg !== "");
+    const commandForLog = finalArgs.join(" ");
+
+    setRunning(commandForLog);
+    setLogs((prev) => [...prev, `\n--- Starting command: ${commandForLog} ---`]);
+    setError(null);
+
+    if (isForceNoConda) {
+      setLogs((prev) => [...prev, `[SIMULATED] VITE_FORCE_NO_CONDA is enabled, skip command: ${commandForLog}`]);
+      handleCommandError("Conda not found in PATH (simulated)");
+      setRunning(null);
+      return;
+    }
+
+    try {
+      await invoke("run_python_dev", {
+        args: finalArgs,
+        pythonExecutable: configuredPython || null,
+      });
+    } catch (e: any) {
+      handleCommandError(String(e));
+      setRunning(null);
+    }
+  };
+
   useEffect(() => {
     if (subscribed.current) return;
     subscribed.current = true;
+
     const setupListeners = async () => {
       const unlistenStdout = await listen<any>("backend://stdout", (event) => {
         const line = event.payload;
         try {
           const result = JSON.parse(line);
           const cmd = result.command;
-          if (cmd === 'probe') {
+
+          if (cmd === "probe") {
             if (result.ok) {
               setCondaInfo(result.data);
+              setShowCondaInstallGuide(false);
             } else {
-              setError(result.error);
+              handleCommandError(result.error);
             }
-          }
-          else if (cmd === 'env-list') {
+          } else if (cmd === "env-list") {
             if (result.ok) {
               setEnvironments(result.data);
             } else {
-              setError(result.error);
+              handleCommandError(result.error);
             }
-          }
-          else if (cmd === 'pkg-list') {
+          } else if (cmd === "pkg-list") {
             if (result.ok) {
               setPackages(result.data);
             } else {
-              setError(result.error);
+              handleCommandError(result.error);
               setPackages([]);
             }
-          }
-          else if (['env-create', 'env-remove', 'env-rename', 'env-import', 'env-clone'].includes(cmd)) {
+          } else if (["env-create", "env-remove", "env-rename", "env-import", "env-clone"].includes(cmd)) {
             if (result.ok) {
-              const action = cmd.split('-')[1];
-              setLogs(prev => [...prev, `--- Environment ${action} operation successful! Refreshing list... ---`]);
+              const action = cmd.split("-")[1];
+              setLogs((prev) => [...prev, `--- Environment ${action} operation successful. Refreshing list... ---`]);
               handleLoadEnvs(false);
             } else {
-              setError(result.error);
+              handleCommandError(result.error);
             }
-          }
-          else if (cmd === 'env-export') {
+          } else if (cmd === "env-export") {
             if (result.ok) {
-              setLogs(prev => [...prev, `--- Environment exported successfully! ---`]);
+              setLogs((prev) => [...prev, "--- Environment exported successfully. ---"]);
             } else {
-              setError(result.error);
+              handleCommandError(result.error);
             }
           }
-        } catch (e) {
+        } catch {
           setLogs((prev) => [...prev, line]);
         }
       });
@@ -117,59 +376,40 @@ function App() {
     };
 
     const unlistenPromise = setupListeners();
-    runCommand('probe');
+    runCommand("probe");
 
     return () => {
-      unlistenPromise.then(cleanup => cleanup && cleanup());
+      unlistenPromise.then((cleanup) => cleanup && cleanup());
     };
   }, []);
 
-  // --- 核心函数 ---
-  const runCommand = async (command: string, extraArgs: string[] = []) => {
-    if (running) return;
-    
-    const finalArgs = [command, ...extraArgs].filter(arg => arg !== '');
-    const commandForLog = finalArgs.join(' ');
-
-    setRunning(commandForLog);
-    setLogs(prev => [...prev, `\n--- Starting command: ${commandForLog} ---`]);
-    setError(null);
-
-    try {
-      await invoke("run_python_dev", { args: finalArgs });
-    } catch (e: any) {
-      setError(String(e));
-      setRunning(null);
-    }
-  };
-
   const handleLoadEnvs = async (probeFirst = true) => {
     if (probeFirst) {
-      await runCommand('probe');
+      await runCommand("probe");
     }
-    runCommand('env-list');
+    runCommand("env-list");
   };
 
   const isEnvNameExists = (name: string) => {
-    if (name.toLowerCase() === 'base') return true;
-    return environments.some(env => (env.path.split(/[\\/]/).pop() || '').toLowerCase() === name.toLowerCase());
+    if (name.toLowerCase() === "base") return true;
+    return environments.some((env) => getEnvName(env.path).toLowerCase() === name.toLowerCase());
   };
 
-  // --- 环境操作处理函数 ---
   const handleCreateEnv = async () => {
-    const name = prompt("请输入新环境的名称:", "my-new-env");
-    if (!name || name.trim() === "") return;
+    if (running) return;
+    const name = prompt(t.createPrompt, "my-new-env");
+    if (!name || !name.trim()) return;
     const trimmedName = name.trim();
 
     if (isEnvNameExists(trimmedName)) {
-      await message(`环境 "${trimmedName}" 已存在，请使用其他名称。`, { title: '创建失败' });
+      await message(t.nameExists(trimmedName), { title: t.createFailTitle });
       return;
     }
 
-    const pythonVersion = prompt("请输入 Python 版本 (例如 3.9):", "3.9");
-    if (!pythonVersion || pythonVersion.trim() === "") return;
+    const pythonVersion = prompt(t.pythonPrompt, "3.10");
+    if (!pythonVersion || !pythonVersion.trim()) return;
 
-    runCommand('env-create', ['--name', trimmedName, '--python', pythonVersion.trim()]);
+    runCommand("env-create", ["--name", trimmedName, "--python", pythonVersion.trim()]);
   };
 
   const handleEnvSelect = (env: Environment) => {
@@ -177,52 +417,57 @@ function App() {
     setSelectedEnvPath(env.path);
     setPackages([]);
     setSearchQuery("");
-    runCommand('pkg-list', ['--prefix', env.path]);
+    runCommand("pkg-list", ["--prefix", env.path]);
   };
 
   const handleRemoveEnv = async (env: Environment) => {
     if (running) return;
-    const envName = env.path.split(/[\\/]/).pop() || env.path;
-    const confirmed = await confirm(`您确定要删除环境 "${envName}" 吗？\n此操作不可恢复！`, { title: "删除确认" });
-    if (confirmed) {
-      if (selectedEnvPath === env.path) {
-        setSelectedEnvPath(null);
-        setPackages([]);
-      }
-      runCommand('env-remove', ['--prefix', env.path]);
+    const envName = getEnvName(env.path);
+    const confirmed = await confirm(t.removeConfirm(envName), { title: t.removeConfirmTitle });
+    if (!confirmed) return;
+
+    if (selectedEnvPath === env.path) {
+      setSelectedEnvPath(null);
+      setPackages([]);
     }
+    runCommand("env-remove", ["--prefix", env.path]);
   };
 
   const handleRenameEnv = async (env: Environment) => {
     if (running) return;
-    const oldName = env.path.split(/[\\/]/).pop() || env.path;
-    const newName = prompt(`请输入环境 "${oldName}" 的新名称:`, oldName);
-    if (!newName || newName.trim() === "" || newName.trim().toLowerCase() === oldName.toLowerCase()) return;
-    const trimmedNewName = newName.trim();
+    const oldName = getEnvName(env.path);
+    const newName = prompt(t.renamePrompt(oldName), oldName);
+    if (!newName || !newName.trim()) return;
 
-    if (isEnvNameExists(trimmedNewName)) {
-      await message(`环境 "${trimmedNewName}" 已存在，请使用其他名称。`, { title: '重命名失败' });
+    const trimmedName = newName.trim();
+    if (trimmedName.toLowerCase() === oldName.toLowerCase()) return;
+
+    if (isEnvNameExists(trimmedName)) {
+      await message(t.nameExists(trimmedName), { title: t.renameFailTitle });
       return;
     }
-    runCommand('env-rename', ['--old-prefix', env.path, '--new-name', trimmedNewName]);
+
+    runCommand("env-rename", ["--old-prefix", env.path, "--new-name", trimmedName]);
   };
 
   const handleCloneEnv = async (env: Environment) => {
     if (running) return;
-    const sourceName = env.path.split(/[\\/]/).pop() || env.path;
-    const destName = prompt(`请输入克隆环境 "${sourceName}" 的新名称:`, `${sourceName}-clone`);
-    if (!destName || destName.trim() === "") return;
-    const trimmedDestName = destName.trim();
+    const sourceName = getEnvName(env.path);
+    const destName = prompt(t.clonePrompt(sourceName), `${sourceName}-clone`);
+    if (!destName || !destName.trim()) return;
 
-    if (trimmedDestName.toLowerCase() === sourceName.toLowerCase()) {
-      await message('新环境名称不能与源环境相同。', { title: '克隆失败' });
+    const trimmedName = destName.trim();
+    if (trimmedName.toLowerCase() === sourceName.toLowerCase()) {
+      await message(t.cloneNameSame, { title: t.cloneFailTitle });
       return;
     }
-    if (isEnvNameExists(trimmedDestName)) {
-      await message(`环境 "${trimmedDestName}" 已存在，请使用其他名称。`, { title: '克隆失败' });
+
+    if (isEnvNameExists(trimmedName)) {
+      await message(t.nameExists(trimmedName), { title: t.cloneFailTitle });
       return;
     }
-    runCommand('env-clone', ['--source-prefix', env.path, '--dest-name', trimmedDestName]);
+
+    runCommand("env-clone", ["--source-prefix", env.path, "--dest-name", trimmedName]);
   };
 
   const openExportModal = (env: Environment) => {
@@ -230,50 +475,55 @@ function App() {
     setIsExportModalOpen(true);
   };
 
-  const handleExportFromModal = async (options: { format: 'yml' | 'txt'; noBuilds: boolean; }) => {
+  const handleExportFromModal = async (options: { format: "yml" | "txt"; noBuilds: boolean }) => {
     if (!exportingEnv) return;
+
     const { format, noBuilds } = options;
-    const envName = exportingEnv.path.split(/[\\/]/).pop() || exportingEnv.path;
-    const defaultFileName = format === 'yml' ? `${envName}-environment.yml` : `${envName}-requirements.txt`;
+    const envName = getEnvName(exportingEnv.path);
+    const defaultFileName = format === "yml" ? `${envName}-environment.yml` : `${envName}-requirements.txt`;
 
     const filePath = await save({
-      title: `导出环境为 ${format.toUpperCase()}`,
+      title: t.exportTitle(format.toUpperCase()),
       defaultPath: defaultFileName,
-      filters: [{ name: `${format.toUpperCase()} File`, extensions: [format] }]
+      filters: [{ name: `${format.toUpperCase()} File`, extensions: [format] }],
     });
 
     if (filePath) {
-      runCommand('env-export', ['--name', envName, '--file', filePath, '--format', format, noBuilds ? '--no-builds' : '']);
+      runCommand("env-export", ["--name", envName, "--file", filePath, "--format", format, noBuilds ? "--no-builds" : ""]);
     }
+
     setIsExportModalOpen(false);
     setExportingEnv(null);
   };
 
   const handleImportEnv = async () => {
     if (running) return;
-    const filePath = await open({
-      title: '从文件导入环境',
-      multiple: false,
-      filters: [{ name: 'Environment File', extensions: ['yml', 'yaml', 'txt'] }]
-    });
-    if (typeof filePath === 'string') {
-      const newName = prompt("请输入新环境的名称。\n此名称将作为你本地环境的名字。");
-      if (!newName || newName.trim() === "") return;
-      const trimmedName = newName.trim();
 
-      if (isEnvNameExists(trimmedName)) {
-        await message(`环境 "${trimmedName}" 已存在，请使用其他名称。`, { title: '导入失败' });
-        return;
-      }
-      runCommand('env-import', ['--file', filePath, '--name', trimmedName]);
+    const filePath = await open({
+      title: t.importTitle,
+      multiple: false,
+      filters: [{ name: t.envFile, extensions: ["yml", "yaml", "txt"] }],
+    });
+
+    if (typeof filePath !== "string") return;
+
+    const newName = prompt(t.importPrompt);
+    if (!newName || !newName.trim()) return;
+
+    const trimmedName = newName.trim();
+    if (isEnvNameExists(trimmedName)) {
+      await message(t.nameExists(trimmedName), { title: t.importFailTitle });
+      return;
     }
+
+    runCommand("env-import", ["--file", filePath, "--name", trimmedName]);
   };
 
-  // --- 派生状态 ---
   const sortedEnvironments = useMemo(() => {
     const rootPrefix = condaInfo?.root_prefix;
     if (!environments) return [];
     if (!rootPrefix) return environments;
+
     return [...environments].sort((a, b) => {
       if (a.path === rootPrefix) return -1;
       if (b.path === rootPrefix) return 1;
@@ -283,90 +533,223 @@ function App() {
 
   const filteredPackages = useMemo(() => {
     if (!searchQuery) return packages;
-    return packages.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    return packages.filter((pkg) => pkg.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [packages, searchQuery]);
 
-  // --- 渲染 ---
+  const selectedEnvName = selectedEnvPath ? getEnvName(selectedEnvPath) : "";
+
   return (
     <>
       <ExportModal
         isOpen={isExportModalOpen}
-        envName={exportingEnv?.path.split(/[\\/]/).pop() || ''}
-        onClose={() => { setIsExportModalOpen(false); setExportingEnv(null); }}
+        envName={exportingEnv ? getEnvName(exportingEnv.path) : ""}
+        locale={locale}
+        onClose={() => {
+          setIsExportModalOpen(false);
+          setExportingEnv(null);
+        }}
         onExport={handleExportFromModal}
       />
-      <div style={{ padding: 16, fontFamily: "system-ui, sans-serif", display: 'flex', gap: '24px' }}>
-        <div style={{ flex: 1 }}>
-          <h1>TXK-Tools</h1>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginBottom: '16px' }}>
-            <button onClick={() => handleLoadEnvs(true)} disabled={!!running}>加载/刷新环境</button>
-            <button onClick={() => setLogs([])} disabled={logs.length === 0}>清空日志</button>
-          </div>
-          
-          {error && <div style={{ padding: 8, background: "#fff1f0", border: "1px solid #ffa39e", marginBottom: '12px' }}><strong>操作失败:</strong> {error}</div>}
-          {condaInfo && <div style={{ padding: 8, background: "#e6ffed", border: "1px solid #b7eb8f", marginBottom: '12px' }}><strong>Conda 已就绪</strong> (版本: {condaInfo.conda_version})</div>}
-          <h3>日志输出</h3>
-          <div ref={logContainerRef} style={{ border: "1px solid #ccc", height: 400, overflow: "auto", padding: 12, background: "#fafafa", fontFamily: "monospace" }}>
-            {logs.length === 0 ? <em>应用启动，自动探测 Conda...</em> : logs.map((l, i) => <div key={i}>{l}</div>)}
-          </div>
-        </div>
-        <div style={{ width: '500px', borderLeft: '1px solid #eee', paddingLeft: '24px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>环境列表</h2>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={handleImportEnv} disabled={!!running}>从文件导入</button>
-              <button onClick={handleCreateEnv} disabled={!!running}>创建环境</button>
+
+      {showCondaInstallGuide && (
+        <div className="guide-overlay">
+          <div className="guide-card">
+            <h2>{t.condaMissingTitle}</h2>
+            <p>{t.condaMissingDesc1}</p>
+            <p>{t.condaMissingDesc2}</p>
+            <div className="guide-links">
+              <button className="link-button" onClick={() => openExternalLink("https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html")}>{t.installConda}</button>
+              <button className="link-button" onClick={() => openExternalLink("https://docs.conda.io/en/latest/miniconda.html")}>{t.installMiniconda}</button>
+            </div>
+            <div className="guide-actions">
+              <button className="btn btn-primary" onClick={() => setShowCondaInstallGuide(false)}>{t.understood}</button>
             </div>
           </div>
-          <div style={{ border: '1px solid #ccc', height: '200px', overflowY: 'auto', marginBottom: '16px' }}>
-            {running?.startsWith('env-list') ? <p style={{padding: '8px'}}>加载中...</p> : 
-            sortedEnvironments.length > 0 ? (
-              <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                {sortedEnvironments.map((env) => {
-                  const envName = env.path.split(/[\\/]/).pop() || env.path;
+        </div>
+      )}
+
+      {showFeatureGuide && (
+        <div className="guide-overlay">
+          <div className="guide-card">
+            <h2>{t.featureTitle}</h2>
+            <p>{t.featureDesc}</p>
+            <ul className="guide-list">
+              <li>{t.featureItem1}</li>
+              <li>{t.featureItem2}</li>
+              <li>{t.featureItem3}</li>
+              <li>{t.featureItem4}</li>
+              <li>{t.featureItem5}</li>
+            </ul>
+            <p>{t.featureFlow}</p>
+            <div className="guide-actions">
+              <button className="btn btn-primary" onClick={() => setShowFeatureGuide(false)}>{t.closeGuide}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="app-shell">
+        <header className="topbar">
+          <div>
+            <h1>CondaTool</h1>
+            <p>{t.appSubtitle}</p>
+          </div>
+          <div className="topbar-actions">
+            <div className="theme-switch" role="group" aria-label={t.themeAria}>
+              <button
+                className={`theme-switch-btn ${themeMode === "light" ? "active" : ""}`}
+                onClick={() => handleThemeModeChange("light")}
+              >
+                {t.themeLight}
+              </button>
+              <button
+                className={`theme-switch-btn ${themeMode === "dark" ? "active" : ""}`}
+                onClick={() => handleThemeModeChange("dark")}
+              >
+                {t.themeDark}
+              </button>
+              <button
+                className={`theme-switch-btn ${themeMode === "system" ? "active" : ""}`}
+                onClick={() => handleThemeModeChange("system")}
+              >
+                {t.themeSystem}
+              </button>
+            </div>
+            <div className="theme-switch" role="group" aria-label={t.langAria}>
+              <button
+                className={`theme-switch-btn ${locale === "zh" ? "active" : ""}`}
+                onClick={() => handleLocaleChange("zh")}
+              >
+                中文
+              </button>
+              <button
+                className={`theme-switch-btn ${locale === "en" ? "active" : ""}`}
+                onClick={() => handleLocaleChange("en")}
+              >
+                English
+              </button>
+            </div>
+            <button className="btn btn-secondary" onClick={() => handleLoadEnvs(true)} disabled={!!running}>{t.refreshEnv}</button>
+            <button className="btn btn-secondary" onClick={() => setShowFeatureGuide(true)}>{t.featureGuide}</button>
+            <button className="btn btn-secondary" onClick={handleImportEnv} disabled={!!running}>{t.importEnv}</button>
+            <button className="btn btn-primary" onClick={handleCreateEnv} disabled={!!running}>{t.createEnv}</button>
+          </div>
+        </header>
+
+        {(error || condaInfo || running) && (
+          <section className="status-row">
+            {condaInfo && <span className="status-chip ok">Conda {condaInfo.conda_version}</span>}
+            {running && <span className="status-chip busy">{t.running}: {running}</span>}
+            {isForceNoConda && <span className="status-chip warn">{t.simulated}</span>}
+            {error && <span className="status-chip err">{t.errorPrefix}: {error}</span>}
+          </section>
+        )}
+
+        <main className="app-grid">
+          <section className="panel env-panel">
+            <div className="panel-head">
+              <h2>{t.panelEnv}</h2>
+              <span>{sortedEnvironments.length}</span>
+            </div>
+            <div className="panel-body env-list">
+              {running?.startsWith("env-list") ? (
+                <p className="hint">{t.loadingEnvs}</p>
+              ) : sortedEnvironments.length === 0 ? (
+                <p className="hint">{t.noEnvs}</p>
+              ) : (
+                sortedEnvironments.map((env) => {
+                  const name = getEnvName(env.path);
                   const isBase = env.path === condaInfo?.root_prefix;
                   const isSelected = env.path === selectedEnvPath;
-                  const baseStyle = isBase ? { backgroundColor: '#fffbe6', borderLeft: '3px solid #faad14' } : {};
-                  const selectedStyle = isSelected ? { backgroundColor: '#e6f7ff', borderLeft: '3px solid #1890ff' } : {};
 
                   return (
-                    <li key={env.path} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0', borderBottom: '1px solid #f0f0f0', ...baseStyle, ...(isSelected && !isBase ? selectedStyle : {}) }}>
-                      <span onClick={() => handleEnvSelect(env)} style={{ flex: 1, padding: '8px 12px', cursor: 'pointer' }}>
-                        <span style={{ fontWeight: 'bold' }}>{isBase ? 'base' : envName}</span>
-                        <span style={{ fontSize: '0.8em', color: '#888', marginLeft: '8px' }}>({env.python_version})</span>
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', paddingRight: '8px' }}>
-                        <button onClick={() => handleCloneEnv(env)} disabled={!!running} title="克隆环境" style={{ background: 'none', border: 'none', color: '#575fcf', cursor: 'pointer', padding: '8px' }}><CloneIcon /></button>
+                    <article
+                      key={env.path}
+                      className={`env-item${isSelected ? " selected" : ""}${isBase ? " base" : ""}`}
+                    >
+                      <button className="env-main" onClick={() => handleEnvSelect(env)} disabled={!!running}>
+                        <strong>{isBase ? "base" : name}</strong>
+                        <small>Python {env.python_version}</small>
+                      </button>
+                      <div className="env-actions">
+                        <button className="icon-btn" onClick={() => handleCloneEnv(env)} disabled={!!running} title={t.clone}>
+                          <CloneIcon />
+                        </button>
                         {!isBase && (
                           <>
-                            <button onClick={() => openExportModal(env)} disabled={!!running} title="导出为文件" style={{ background: 'none', border: 'none', color: '#16a34a', cursor: 'pointer', padding: '8px' }}><ExportIcon /></button>
-                            <button onClick={() => handleRenameEnv(env)} disabled={!!running} title="重命名" style={{ background: 'none', border: 'none', color: '#1890ff', cursor: 'pointer', padding: '8px' }}><RenameIcon /></button>
-                            <button onClick={() => handleRemoveEnv(env)} disabled={!!running} title="删除" style={{ background: 'none', border: 'none', color: '#ff4d4f', cursor: 'pointer', padding: '8px' }}><RemoveIcon /></button>
+                            <button className="icon-btn" onClick={() => openExportModal(env)} disabled={!!running} title={t.export}>
+                              <ExportIcon />
+                            </button>
+                            <button className="icon-btn" onClick={() => handleRenameEnv(env)} disabled={!!running} title={t.rename}>
+                              <RenameIcon />
+                            </button>
+                            <button className="icon-btn danger" onClick={() => handleRemoveEnv(env)} disabled={!!running} title={t.remove}>
+                              <RemoveIcon />
+                            </button>
                           </>
                         )}
                       </div>
-                    </li>
+                    </article>
                   );
-                })}
-              </ul>
-            ) : <p style={{ padding: '8px' }}>请点击“加载/刷新环境”</p>}
-          </div>
-          <h2>包列表 {selectedEnvPath && `(in ${selectedEnvPath.split(/[\\/]/).pop()})`}</h2>
-          <input type="search" placeholder="搜索包名..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ width: '100%', padding: '8px', marginBottom: '8px', boxSizing: 'border-box' }}/>
-          <div style={{ flex: 1, border: '1px solid #ccc', overflowY: 'auto' }}>
-            {selectedEnvPath ? (
-              running?.startsWith('pkg-list') ? <p style={{padding: '8px'}}>加载中...</p> :
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead style={{ position: 'sticky', top: 0, background: '#fafafa' }}>
-                  <tr><th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>名称</th><th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>版本</th><th style={{ padding: '8px', textAlign: 'left', borderBottom: '1px solid #ddd' }}>渠道</th></tr>
-                </thead>
-                <tbody>
-                  {filteredPackages.map((pkg, i) => (<tr key={`${pkg.name}-${i}`}><td style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>{pkg.name}</td><td style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>{pkg.version}</td><td style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>{pkg.channel}</td></tr>))}
-                </tbody>
-              </table>
-            ) : <p style={{ padding: '8px' }}>请从上方选择一个环境</p>}
-          </div>
-        </div>
+                })
+              )}
+            </div>
+          </section>
+
+          <section className="panel package-panel">
+            <div className="panel-head">
+              <h2>{t.panelPkg}</h2>
+              <span>{selectedEnvName || t.noSelectedEnv}</span>
+            </div>
+            <div className="panel-tools">
+              <input
+                type="search"
+                placeholder={t.searchPkg}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                disabled={!selectedEnvPath}
+              />
+            </div>
+            <div className="panel-body table-wrap">
+              {!selectedEnvPath ? (
+                <p className="hint">{t.selectEnvHint}</p>
+              ) : running?.startsWith("pkg-list") ? (
+                <p className="hint">{t.loadingPkgs}</p>
+              ) : filteredPackages.length === 0 ? (
+                <p className="hint">{t.noMatchedPkg}</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t.name}</th>
+                      <th>{t.version}</th>
+                      <th>{t.channel}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPackages.map((pkg, i) => (
+                      <tr key={`${pkg.name}-${i}`}>
+                        <td>{pkg.name}</td>
+                        <td>{pkg.version}</td>
+                        <td>{pkg.channel || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </section>
+
+          <section className="panel log-panel">
+            <div className="panel-head">
+              <h2>{t.panelLog}</h2>
+              <button className="btn btn-ghost" onClick={() => setLogs([])} disabled={logs.length === 0}>{t.clear}</button>
+            </div>
+            <div className="panel-body log-body" ref={logContainerRef}>
+              {logs.length === 0 ? <em>{t.startupProbe}</em> : logs.map((line, i) => <div key={i}>{line}</div>)}
+            </div>
+          </section>
+        </main>
       </div>
     </>
   );

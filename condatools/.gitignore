@@ -27,3 +27,7 @@ dist-ssr
 build/
 *.zip
 *.spec
+
+# Python bytecode
+__pycache__/
+*.pyc
