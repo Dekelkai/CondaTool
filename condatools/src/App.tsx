@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { confirm, save, open, message } from "@tauri-apps/plugin-dialog";
@@ -37,7 +37,7 @@ const i18n = {
     importEnv: "导入环境",
     createEnv: "新建环境",
     running: "执行中",
-    simulated: "模拟模式: 无 Conda",
+    simulated: "模拟模式: 包管理器不可用",
     errorPrefix: "错误",
     panelEnv: "环境",
     loadingEnvs: "正在加载环境...",
@@ -57,16 +57,16 @@ const i18n = {
     channel: "渠道",
     panelLog: "日志",
     clear: "清空",
-    startupProbe: "应用启动，自动探测 Conda...",
-    condaMissingTitle: "未检测到 Conda 或 Miniconda",
-    condaMissingDesc1: "CondaTool 依赖 Conda 生态来创建、克隆、导入导出和管理 Python 环境。当前系统中未检测到可用的 Conda 命令，请先安装。",
-    condaMissingDesc2: "Conda 是环境与包管理工具；Miniconda 是轻量发行版，安装更快，占用更小。",
-    installConda: "安装 Conda (官方)",
-    installMiniconda: "安装 Miniconda (官方)",
+    startupProbe: "应用启动，正在检查内置运行时...",
+    condaMissingTitle: "内置运行时缺失",
+    condaMissingDesc1: "CondaTool 依赖内置运行时（backend.exe 与 micromamba.exe）。当前未检测到完整运行时文件。",
+    condaMissingDesc2: "请重新安装应用，或在安装目录中检查 runtime 文件是否被杀毒软件隔离。",
+    installConda: "查看文档（运行时说明）",
+    installMiniconda: "查看 micromamba 文档",
     understood: "我已了解",
     featureTitle: "CondaTool 功能说明",
     featureDesc: "CondaTool 面向需要可视化管理 Conda 环境的开发者与数据工作者，核心目标是减少命令行操作成本，提升环境管理效率。",
-    featureItem1: "自动探测本机 Conda/Miniconda 与 base 环境状态。",
+    featureItem1: "检查内置运行时（backend.exe 与 micromamba.exe）并加载环境状态。",
     featureItem2: "图形化管理环境：创建、删除、克隆、重命名。",
     featureItem3: "查看并搜索指定环境下的已安装包与版本信息。",
     featureItem4: "支持环境导入/导出（`yml` / `txt`），便于共享与复现。",
@@ -90,7 +90,9 @@ const i18n = {
     importFailTitle: "导入失败",
     envFile: "环境文件",
     cannotOpenLink: "无法打开链接",
-    condaMissingError: "未检测到 Conda/Miniconda，请先安装后再使用本工具。",
+    runtimeMissingError: "runtime missing: required runtime files are not available.",
+    backendStartupError: "backend startup failed: unable to launch backend runtime.",
+    packageManagerInitError: "package manager init failed: package manager runtime is unavailable.",
     themeAria: "主题切换",
     langAria: "语言切换",
   },
@@ -104,7 +106,7 @@ const i18n = {
     importEnv: "Import",
     createEnv: "New Environment",
     running: "Running",
-    simulated: "Simulation Mode: No Conda",
+    simulated: "Simulation Mode: Package manager unavailable",
     errorPrefix: "Error",
     panelEnv: "Environments",
     loadingEnvs: "Loading environments...",
@@ -124,16 +126,16 @@ const i18n = {
     channel: "Channel",
     panelLog: "Logs",
     clear: "Clear",
-    startupProbe: "App started. Probing Conda...",
-    condaMissingTitle: "Conda or Miniconda Not Detected",
-    condaMissingDesc1: "CondaTool relies on Conda to create, clone, import/export, and manage Python environments. No available Conda command was detected on this system.",
-    condaMissingDesc2: "Conda is an environment and package manager. Miniconda is a lightweight distribution with a smaller footprint.",
-    installConda: "Install Conda (Official)",
-    installMiniconda: "Install Miniconda (Official)",
+    startupProbe: "App started. Checking bundled runtime...",
+    condaMissingTitle: "Bundled Runtime Missing",
+    condaMissingDesc1: "CondaTool relies on bundled runtime files (backend.exe and micromamba.exe). Required files are missing or inaccessible.",
+    condaMissingDesc2: "Reinstall the app or check whether security software quarantined runtime binaries.",
+    installConda: "Open docs (runtime)",
+    installMiniconda: "Open micromamba docs",
     understood: "Got it",
     featureTitle: "CondaTool Feature Guide",
     featureDesc: "CondaTool is designed for developers and data professionals who need visual management for Conda environments, reducing command-line overhead and improving efficiency.",
-    featureItem1: "Automatically detect local Conda/Miniconda and base environment status.",
+    featureItem1: "Check bundled runtime files (backend.exe and micromamba.exe) and load environment state.",
     featureItem2: "Manage environments visually: create, delete, clone, and rename.",
     featureItem3: "View and search installed packages and versions in any selected environment.",
     featureItem4: "Import/export environments (`yml` / `txt`) for sharing and reproducibility.",
@@ -157,7 +159,9 @@ const i18n = {
     importFailTitle: "Import Failed",
     envFile: "Environment File",
     cannotOpenLink: "Cannot open link",
-    condaMissingError: "Conda/Miniconda was not detected. Please install it before using this app.",
+    runtimeMissingError: "runtime missing: required runtime files are not available.",
+    backendStartupError: "backend startup failed: unable to launch backend runtime.",
+    packageManagerInitError: "package manager init failed: package manager runtime is unavailable.",
     themeAria: "Theme switch",
     langAria: "Language switch",
   },
@@ -223,25 +227,32 @@ function App() {
   const subscribed = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
-  const forceNoConda = String(import.meta.env.VITE_FORCE_NO_CONDA || "").toLowerCase();
-  const isForceNoConda = forceNoConda === "1" || forceNoConda === "true";
-  const configuredPython = String(import.meta.env.VITE_CONDATOOL_PYTHON || "").trim();
-  const effectiveTheme = themeMode === "system" ? (systemPrefersDark ? "dark" : "light") : themeMode;
+  const forceNoRuntime = String(import.meta.env.VITE_FORCE_RUNTIME_MISSING || import.meta.env.VITE_FORCE_NO_CONDA || "").toLowerCase();
+  const isForceNoRuntime = forceNoRuntime === "1" || forceNoRuntime === "true";
+    const effectiveTheme = themeMode === "system" ? (systemPrefersDark ? "dark" : "light") : themeMode;
   const t = i18n[locale];
 
   const getEnvName = (fullPath: string) => fullPath.split(/[\\/]/).pop() || fullPath;
 
-  const isCondaMissingError = (rawError: string | null | undefined) => {
-    if (!rawError) return false;
-    return /conda not found|not found in path|is not recognized/i.test(rawError);
-  };
-
   const handleCommandError = (rawError: string) => {
-    if (isCondaMissingError(rawError)) {
-      setError(t.condaMissingError);
+    const normalized = rawError.toLowerCase();
+
+    if (normalized.includes("runtime missing")) {
+      setError(t.runtimeMissingError);
       setShowCondaInstallGuide(true);
       return;
     }
+
+    if (normalized.includes("backend startup failed")) {
+      setError(t.backendStartupError);
+      return;
+    }
+
+    if (normalized.includes("package manager init failed")) {
+      setError(t.packageManagerInitError);
+      return;
+    }
+
     setError(rawError);
   };
 
@@ -291,18 +302,15 @@ function App() {
     setLogs((prev) => [...prev, `\n--- Starting command: ${commandForLog} ---`]);
     setError(null);
 
-    if (isForceNoConda) {
-      setLogs((prev) => [...prev, `[SIMULATED] VITE_FORCE_NO_CONDA is enabled, skip command: ${commandForLog}`]);
-      handleCommandError("Conda not found in PATH (simulated)");
+    if (isForceNoRuntime) {
+      setLogs((prev) => [...prev, `[SIMULATED] VITE_FORCE_RUNTIME_MISSING is enabled, skip command: ${commandForLog}`]);
+      handleCommandError("package manager init failed: executable not found");
       setRunning(null);
       return;
     }
 
     try {
-      await invoke("run_python_dev", {
-        args: finalArgs,
-        pythonExecutable: configuredPython || null,
-      });
+      await invoke("run_backend", { args: finalArgs });
     } catch (e: any) {
       handleCommandError(String(e));
       setRunning(null);
@@ -558,8 +566,8 @@ function App() {
             <p>{t.condaMissingDesc1}</p>
             <p>{t.condaMissingDesc2}</p>
             <div className="guide-links">
-              <button className="link-button" onClick={() => openExternalLink("https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html")}>{t.installConda}</button>
-              <button className="link-button" onClick={() => openExternalLink("https://docs.conda.io/en/latest/miniconda.html")}>{t.installMiniconda}</button>
+              <button className="link-button" onClick={() => openExternalLink("https://github.com/Dekelkai/CondaTool#-独立打包目标condatoolexe")}>{t.installConda}</button>
+              <button className="link-button" onClick={() => openExternalLink("https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html")}>{t.installMiniconda}</button>
             </div>
             <div className="guide-actions">
               <button className="btn btn-primary" onClick={() => setShowCondaInstallGuide(false)}>{t.understood}</button>
@@ -640,7 +648,7 @@ function App() {
           <section className="status-row">
             {condaInfo && <span className="status-chip ok">Conda {condaInfo.conda_version}</span>}
             {running && <span className="status-chip busy">{t.running}: {running}</span>}
-            {isForceNoConda && <span className="status-chip warn">{t.simulated}</span>}
+            {isForceNoRuntime && <span className="status-chip warn">{t.simulated}</span>}
             {error && <span className="status-chip err">{t.errorPrefix}: {error}</span>}
           </section>
         )}

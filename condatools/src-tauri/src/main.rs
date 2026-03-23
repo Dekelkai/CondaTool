@@ -7,22 +7,22 @@ use std::process::{Command, Stdio};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, Window};
 
-fn resolve_backend_script_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn resolve_runtime_binary(app: &AppHandle, binary_name: &str) -> Result<PathBuf, String> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
-    // Packaged app resource location (expected for release bundle).
+    // Packaged app resource location.
     if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("backend").join("main.py"));
+        candidates.push(resource_dir.join("runtime").join(binary_name));
     }
 
-    // Development fallback: source tree relative to src-tauri crate.
+    // Development fallback: src-tauri/resources/runtime
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(manifest_dir.join("..").join("backend").join("main.py"));
+    candidates.push(manifest_dir.join("resources").join("runtime").join(binary_name));
 
-    // Development fallback: next to executable (helps custom runs).
+    // Development fallback: next to executable.
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            candidates.push(exe_dir.join("backend").join("main.py"));
+            candidates.push(exe_dir.join("runtime").join(binary_name));
         }
     }
 
@@ -37,60 +37,39 @@ fn resolve_backend_script_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map(|p| p.to_string_lossy().to_string())
         .collect::<Vec<_>>()
         .join(" | ");
-    Err(format!("Python script not found. Tried: {tried}"))
-}
-
-fn resolve_python_executable(explicit_python: Option<String>) -> String {
-    if let Some(p) = explicit_python {
-        let trimmed = p.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-
-    // Highest priority: explicit override for this app.
-    if let Ok(p) = std::env::var("CONDATOOL_PYTHON") {
-        let trimmed = p.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-
-    // Activated conda environments usually expose this variable.
-    if let Ok(p) = std::env::var("CONDA_PYTHON_EXE") {
-        let trimmed = p.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-
-    "python".to_string()
+    Err(format!("runtime missing: {binary_name}. tried: {tried}"))
 }
 
 #[tauri::command]
-fn run_python_dev(
-    window: Window,
-    args: Vec<String>,
-    python_executable: Option<String>,
-) -> Result<(), String> {
-    let script_path = resolve_backend_script_path(&window.app_handle())?;
-    let python_executable = resolve_python_executable(python_executable);
+fn run_backend(window: Window, args: Vec<String>) -> Result<(), String> {
+    let app = window.app_handle();
+    let backend_path = resolve_runtime_binary(&app, "backend.exe")
+        .map_err(|e| format!("backend startup failed: {e}"))?;
+    let package_manager_path = resolve_runtime_binary(&app, "micromamba.exe")
+        .map_err(|e| format!("package manager init failed: {e}"))?;
 
-    let mut full_args = vec![script_path.to_string_lossy().to_string()];
+    let mut full_args = vec![
+        "--package-manager".to_string(),
+        package_manager_path.to_string_lossy().to_string(),
+    ];
     full_args.extend(args);
 
-    // 使用 script_path 所在目录作为 cwd
-    let cwd = script_path
+    let cwd = backend_path
         .parent()
-        .ok_or("Failed to get parent directory of script")?;
+        .ok_or("backend startup failed: invalid backend path")?;
 
-    let mut child = Command::new(&python_executable)
+    let mut child = Command::new(&backend_path)
         .args(full_args)
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawn python failed ({python_executable}): {e}"))?;
+        .map_err(|e| {
+            format!(
+                "backend startup failed: spawn {} failed: {e}",
+                backend_path.to_string_lossy()
+            )
+        })?;
 
     // stdout
     if let Some(stdout) = child.stdout.take() {
@@ -136,7 +115,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![run_python_dev])
+        .invoke_handler(tauri::generate_handler![run_backend])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

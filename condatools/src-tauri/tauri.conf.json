@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "condatools",
+  "productName": "CondaTool",
   "version": "0.1.0",
   "identifier": "com.condatool.condatools",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "condatools",
+        "title": "CondaTool",
         "width": 800,
         "height": 600
       }
@@ -21,11 +21,10 @@
       "csp": null
     }
   },
-  
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": ["../backend/**/*"],
+    "resources": ["../backend/**/*", "./resources/runtime/**/*"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
