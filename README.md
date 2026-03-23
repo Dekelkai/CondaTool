@@ -1,7 +1,13 @@
-# CondaTool
+﻿<div align="center">
+  <h1>CondaTool</h1>
+  <p><strong>A modern desktop GUI for Conda/Miniconda environment management</strong></p>
+  <p>基于 Tauri + React + Python，提供更直观的 Conda 环境管理体验。</p>
+  <img src="./asset/img.png" alt="CondaTool Preview" width="88%" />
+</div>
 
-CondaTool 是一个基于 [Tauri](https://tauri.app/) + React + Python 的桌面 GUI 工具，用于管理本机 Conda/Miniconda 环境。
+---
 
+CondaTool 是一个基于 [Tauri](https://tauri.app/) + React + Python 的桌面 GUI 工具，用于管理本机 Conda/Miniconda 环境。  
 它面向希望减少命令行操作成本的用户，提供可视化的环境管理、包查看与导入导出能力。
 
 ## ✨ 当前功能
