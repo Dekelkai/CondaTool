@@ -9,6 +9,7 @@ from .utils import (
     emit_result,
     get_package_manager_path,
     get_package_manager_kind,
+    get_hidden_subprocess_kwargs,
     run_package_manager_command_for_json,
     stream_package_manager_command,
 )
@@ -489,7 +490,7 @@ def cmd_env_list(args):
             python_exe = os.path.join(env_path, "python.exe") if sys.platform == "win32" else os.path.join(env_path, "bin", "python")
             if not os.path.exists(python_exe):
                 return {"path": env_path, "python_version": python_version}
-            py_version_proc = subprocess.run([python_exe, "--version"], capture_output=True, text=True, timeout=2, encoding="utf-8", check=True)
+            py_version_proc = subprocess.run([python_exe, "--version"], capture_output=True, text=True, timeout=2, encoding="utf-8", check=True, **get_hidden_subprocess_kwargs())
             output = py_version_proc.stdout.strip() or py_version_proc.stderr.strip()
             if "Python" in output:
                 python_version = output.split()[-1]
@@ -581,7 +582,7 @@ def cmd_env_export(args):
             if args.no_builds:
                 export_cmd.append("--no-builds")
             cmd.extend(export_cmd)
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8", **get_hidden_subprocess_kwargs())
             lines = proc.stdout.splitlines()
             cleaned_lines = [line for line in lines if not line.startswith("prefix:")]
             output = "\n".join(cleaned_lines)
@@ -589,7 +590,7 @@ def cmd_env_export(args):
         elif args.format == "txt":
             export_cmd = ["list", "--export", "--name", args.name]
             cmd.extend(export_cmd)
-            proc = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
+            proc = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8", **get_hidden_subprocess_kwargs())
             output = proc.stdout
             if args.no_builds:
                 lines = output.splitlines()

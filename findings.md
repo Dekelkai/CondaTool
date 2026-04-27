@@ -9,6 +9,7 @@
 - 开始实现诊断页，优先提供当前包管理器、环境、配置和渠道信息。
 - 实现源配置，完成本地测试，更新版本与文档，并推送到 GitHub 发布最新版本。
 - 接入签名流程，降低另一台机器安装后 runtime 被拦截的概率。
+- 修复其他机器上点击执行按钮时弹出黑色命令行窗口的问题。
 
 ## 研究发现
 - 项目主体位于 `condatools/`，前端使用 React + TypeScript，桌面壳使用 Tauri 2，命令后端使用 Python。
@@ -45,6 +46,9 @@
 - 源配置第一版最终范围收敛为：查看当前配置、查看配置文件路径、切换官方默认源与清华镜像源。
 - 当前 `backend.exe` 与 `micromamba.exe` 都是 `NotSigned`，这会明显增加安装后被安全软件隔离的概率。
 - 仓库内目前没有发现现成的签名证书、Trusted Signing 配置或 `signtool` 脚本。
+- 黑框修复需要作为独立补丁版本发布，否则用户仍会拿到旧版 `0.2.1` 安装包。
+- 黑框问题与签名无关，主要来自 Windows 下控制台子进程默认会弹窗。
+- 当前 Rust 启动 `backend.exe` 时没有设置 `CREATE_NO_WINDOW`，Python 后端内部启动 `micromamba/conda/python.exe` 时也没有设置隐藏窗口参数。
 
 ## 技术决策
 | 决策 | 理由 |
@@ -62,6 +66,7 @@
 | 源配置写入优先使用 `conda config --file ~/.condarc` | 这样既能影响 conda，也能被 micromamba 读取，兼容性最稳 |
 | 源配置最终改为直接维护 `.condarc` 的受管片段 | 避免 CLI 不同行为导致展示与写入不一致 |
 | 签名流程优先支持本地 PFX + signtool | 这是最直接、最常见、最容易在现有发布流程中落地的方案 |
+| 黑框修复优先使用 Windows `CREATE_NO_WINDOW` | 比修改 PyInstaller 为 `--noconsole` 风险更低，不会破坏现有 stdout/stderr IPC |
 
 ## 遇到的问题
 | 问题 | 解决方案 |

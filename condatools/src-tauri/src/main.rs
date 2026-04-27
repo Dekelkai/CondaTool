@@ -2,10 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::io::{BufRead, BufReader};
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, Window};
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn push_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
     if !candidates.iter().any(|existing| existing == &candidate) {
@@ -73,11 +78,17 @@ fn run_backend(window: Window, args: Vec<String>) -> Result<(), String> {
         .parent()
         .ok_or("backend startup failed: invalid backend path")?;
 
-    let mut child = Command::new(&backend_path)
+    let mut command = Command::new(&backend_path);
+    command
         .args(full_args)
         .current_dir(cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = command
         .spawn()
         .map_err(|e| {
             format!(

@@ -73,8 +73,8 @@ function Get-DefaultFiles {
   if ($IncludeBundles) {
     $targets += @(
       (Join-Path $ProjectRoot "src-tauri\target\release\condatools.exe"),
-      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\msi\CondaTool_0.2.1_x64_en-US.msi"),
-      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis\CondaTool_0.2.1_x64-setup.exe")
+      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\msi\CondaTool_0.2.2_x64_en-US.msi"),
+      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis\CondaTool_0.2.2_x64-setup.exe")
     )
   }
 

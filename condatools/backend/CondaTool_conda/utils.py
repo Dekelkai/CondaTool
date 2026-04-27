@@ -8,6 +8,12 @@ import subprocess
 PACKAGE_MANAGER_PATH = None
 
 
+def get_hidden_subprocess_kwargs():
+    if sys.platform != "win32":
+        return {}
+    return {"creationflags": subprocess.CREATE_NO_WINDOW}
+
+
 def log(line: str, stream="stdout"):
     """
     Log output function to stdout or stderr.
@@ -93,7 +99,7 @@ def run_package_manager_command_for_json(args: list, command_name: str):
 
     full_command = [package_manager_path] + args
     try:
-        proc = subprocess.run(full_command, capture_output=True, text=True, check=True, encoding="utf-8", timeout=60)
+        proc = subprocess.run(full_command, capture_output=True, text=True, check=True, encoding="utf-8", timeout=60, **get_hidden_subprocess_kwargs())
         return True, json.loads(proc.stdout)
     except Exception as e:
         error_message = str(e)
@@ -128,6 +134,7 @@ def stream_package_manager_command(args: list, command_name: str, emit_final_res
             text=True,
             encoding="utf-8",
             bufsize=1,
+            **get_hidden_subprocess_kwargs(),
         )
         for line in iter(process.stdout.readline, ""):
             log(line.strip())

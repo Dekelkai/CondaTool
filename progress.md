@@ -168,6 +168,30 @@
   - `findings.md`
   - `progress.md`
 
+### 阶段 14：黑框弹出修复
+- **状态：** complete
+- 执行的操作：
+  - 在 `src-tauri/src/main.rs` 中为 Windows 子进程添加 `CREATE_NO_WINDOW`
+  - 在 Python 后端所有关键 `subprocess.run` / `subprocess.Popen` 位置加入隐藏控制台窗口参数
+  - 运行前端构建、Rust release 构建与 Python 语法检查
+  - 重建 runtime 中的 `backend.exe`
+- 创建/修改的文件：
+  - `condatools/src-tauri/src/main.rs`
+  - `condatools/backend/CondaTool_conda/utils.py`
+  - `condatools/backend/CondaTool_conda/commands.py`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 15：0.2.2 修复发版
+- **状态：** in_progress
+- 执行的操作：
+  - 准备把黑框修复作为 `0.2.2` 补丁版本重新发布
+- 创建/修改的文件：
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
 ## 测试结果
 | 测试 | 输入 | 预期结果 | 实际结果 | 状态 |
 |------|------|---------|---------|------|
@@ -197,6 +221,7 @@
 | 源配置切换验证 | `python main.py ... source-config-apply-preset --preset defaults/tuna` | 可在两套预设间切换并正确读回 | 已成功切换并读回 `~/.condarc` 受管片段 | 通过 |
 | 0.2.0 最终打包测试 | `npm run tauri build` | 生成 0.2.0 安装包 | 成功生成 `CondaTool_0.2.0_x64_en-US.msi` 与 `CondaTool_0.2.0_x64-setup.exe` | 通过 |
 | runtime 签名检查 | `Get-AuthenticodeSignature` | 确认当前签名状态 | `backend.exe` 与 `micromamba.exe` 均为 `NotSigned` | 通过 |
+| 黑框修复构建验证 | `npm run build` + `cargo build --release` + `py_compile` | 确认修复不破坏前后端构建 | 三项验证均通过 | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -212,13 +237,14 @@
 | 2026-04-27 | `micromamba config set` 对 `custom_channels.<name>` 这种嵌套键支持不足 | 1 | 改为统一使用 `conda config --file ~/.condarc` 写入源配置 |
 | 2026-04-27 | `config list/show` 会把默认值或派生值混入源配置展示 | 1 | 改为直接解析 `~/.condarc` 中的受管片段 |
 | 2026-04-27 | 发布包中的 runtime 为未签名二进制 | 1 | 接入签名脚本与发布流程 |
+| 2026-04-27 | 其他机器点击按钮时弹出黑色命令行窗口 | 1 | 在 Rust 与 Python 子进程层统一添加隐藏窗口参数 |
 
 ## 五问重启检查
 | 问题 | 答案 |
 |------|------|
-| 我在哪里？ | 阶段 13 |
-| 我要去哪里？ | 接入可执行的签名流程，并在具备证书时产出已签名安装包 |
-| 目标是什么？ | 解决未签名 runtime 导致发布包在别的机器上不稳定的问题 |
+| 我在哪里？ | 阶段 14 完成 |
+| 我要去哪里？ | 等待决定是否发布黑框修复版与后续签名方案 |
+| 目标是什么？ | 修复 Windows 下按钮触发时的黑框弹出问题 |
 | 我学到了什么？ | 见 findings.md |
 | 我做了什么？ | 见上方记录 |
 
