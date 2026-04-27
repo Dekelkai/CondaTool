@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { confirm, save, open, message } from "@tauri-apps/plugin-dialog";
@@ -12,6 +12,30 @@ interface CondaInfo {
   root_prefix: string;
 }
 
+interface DiagnosticsInfo {
+  package_manager_kind: string;
+  package_manager_path: string;
+  conda_version: string;
+  python_version: string;
+  root_prefix: string;
+  active_environment: string;
+  envs_directories: string[];
+  package_cache_directories: string[];
+  config_files: string[];
+  channels: string[];
+  proxy_servers: Record<string, string>;
+  ssl_verify: string | boolean | null;
+}
+
+interface SourceConfigInfo {
+  channels: string[];
+  default_channels: string[];
+  custom_channels: Record<string, string>;
+  channel_priority: string;
+  config_file: string;
+  available_presets: string[];
+}
+
 interface Environment {
   path: string;
   python_version: string;
@@ -23,8 +47,20 @@ interface Package {
   build: string;
   channel: string;
 }
+
+interface CommandMeta {
+  command: string;
+  envPath?: string;
+  nextSelectedEnvName?: string;
+  clearSelectedEnvOnSuccess?: boolean;
+}
+
 type ThemeMode = "light" | "dark" | "system";
 type Locale = "zh" | "en";
+
+const MAX_LOG_LINES = 600;
+const LOG_FLUSH_DELAY_MS = 48;
+const LOG_BATCH_SIZE = 20;
 
 const i18n = {
   zh: {
@@ -34,6 +70,8 @@ const i18n = {
     themeSystem: "跟随系统",
     refreshEnv: "刷新环境",
     featureGuide: "功能说明",
+    diagnostics: "诊断",
+    sourceConfig: "源配置",
     importEnv: "导入环境",
     createEnv: "新建环境",
     running: "执行中",
@@ -70,9 +108,41 @@ const i18n = {
     featureItem2: "图形化管理环境：创建、删除、克隆、重命名。",
     featureItem3: "查看并搜索指定环境下的已安装包与版本信息。",
     featureItem4: "支持环境导入/导出（`yml` / `txt`），便于共享与复现。",
-    featureItem5: "实时日志追踪后台命令执行过程，便于排查问题。",
-    featureFlow: "推荐流程：先刷新环境列表，选择目标环境查看包信息，再进行创建/克隆/导入导出等操作。",
+    featureItem5: "支持查看诊断信息与源配置，便于定位环境和镜像问题。",
+    featureFlow: "推荐流程：先刷新环境列表，必要时查看诊断与源配置，再选择目标环境查看包信息或进行创建/克隆/导入导出等操作。",
     closeGuide: "关闭说明",
+    diagnosticsTitle: "诊断信息",
+    diagnosticsLoading: "正在收集诊断信息...",
+    diagnosticsRefresh: "刷新诊断",
+    diagnosticsClose: "关闭诊断",
+    diagnosticsPackageManager: "包管理器",
+    diagnosticsPackageManagerPath: "执行路径",
+    diagnosticsRootPrefix: "根环境路径",
+    diagnosticsActiveEnv: "当前活动环境",
+    diagnosticsCondaVersion: "Conda 版本",
+    diagnosticsPythonVersion: "Python 版本",
+    diagnosticsConfigFiles: "配置文件",
+    diagnosticsChannels: "当前渠道",
+    diagnosticsProxy: "代理配置",
+    diagnosticsSslVerify: "SSL 校验",
+    diagnosticsEnvDirs: "环境目录",
+    diagnosticsPkgCaches: "包缓存目录",
+    diagnosticsNone: "未配置",
+    sourceConfigTitle: "源配置",
+    sourceConfigLoading: "正在读取源配置...",
+    sourceConfigRefresh: "刷新源配置",
+    sourceConfigClose: "关闭源配置",
+    sourceConfigPreset: "预设模板",
+    sourceConfigApply: "应用模板",
+    sourceConfigCurrentFile: "配置文件",
+    sourceConfigChannels: "Channels",
+    sourceConfigDefaultChannels: "Default Channels",
+    sourceConfigCustomChannels: "Custom Channels",
+    sourceConfigPriority: "Channel Priority",
+    sourceConfigDefaultsLabel: "官方默认源",
+    sourceConfigTunaLabel: "清华镜像",
+    sourceConfigApplySuccess: (preset: string) => `已应用源配置模板：${preset}`,
+    sourceConfigApplyFailed: "源配置应用失败",
     createPrompt: "请输入新环境名称:",
     createFailTitle: "创建失败",
     nameExists: (name: string) => `环境 \"${name}\" 已存在，请使用其他名称。`,
@@ -103,6 +173,8 @@ const i18n = {
     themeSystem: "System",
     refreshEnv: "Refresh Environments",
     featureGuide: "Feature Guide",
+    diagnostics: "Diagnostics",
+    sourceConfig: "Sources",
     importEnv: "Import",
     createEnv: "New Environment",
     running: "Running",
@@ -139,9 +211,41 @@ const i18n = {
     featureItem2: "Manage environments visually: create, delete, clone, and rename.",
     featureItem3: "View and search installed packages and versions in any selected environment.",
     featureItem4: "Import/export environments (`yml` / `txt`) for sharing and reproducibility.",
-    featureItem5: "Track backend command execution through real-time logs for troubleshooting.",
-    featureFlow: "Recommended flow: refresh environments first, select a target environment, inspect packages, then perform create/clone/import/export actions.",
+    featureItem5: "Review diagnostics and source configuration to troubleshoot environment and mirror issues.",
+    featureFlow: "Recommended flow: refresh environments first, review diagnostics or sources if needed, then inspect packages or perform create/clone/import/export actions.",
     closeGuide: "Close",
+    diagnosticsTitle: "Diagnostics",
+    diagnosticsLoading: "Collecting diagnostics...",
+    diagnosticsRefresh: "Refresh Diagnostics",
+    diagnosticsClose: "Close Diagnostics",
+    diagnosticsPackageManager: "Package Manager",
+    diagnosticsPackageManagerPath: "Executable Path",
+    diagnosticsRootPrefix: "Root Prefix",
+    diagnosticsActiveEnv: "Active Environment",
+    diagnosticsCondaVersion: "Conda Version",
+    diagnosticsPythonVersion: "Python Version",
+    diagnosticsConfigFiles: "Config Files",
+    diagnosticsChannels: "Channels",
+    diagnosticsProxy: "Proxy Settings",
+    diagnosticsSslVerify: "SSL Verify",
+    diagnosticsEnvDirs: "Environment Directories",
+    diagnosticsPkgCaches: "Package Cache Directories",
+    diagnosticsNone: "Not configured",
+    sourceConfigTitle: "Source Configuration",
+    sourceConfigLoading: "Loading source configuration...",
+    sourceConfigRefresh: "Refresh Sources",
+    sourceConfigClose: "Close Sources",
+    sourceConfigPreset: "Preset",
+    sourceConfigApply: "Apply Preset",
+    sourceConfigCurrentFile: "Config File",
+    sourceConfigChannels: "Channels",
+    sourceConfigDefaultChannels: "Default Channels",
+    sourceConfigCustomChannels: "Custom Channels",
+    sourceConfigPriority: "Channel Priority",
+    sourceConfigDefaultsLabel: "Official Defaults",
+    sourceConfigTunaLabel: "TUNA Mirror",
+    sourceConfigApplySuccess: (preset: string) => `Applied source preset: ${preset}`,
+    sourceConfigApplyFailed: "Failed to apply source preset",
     createPrompt: "Enter new environment name:",
     createFailTitle: "Create Failed",
     nameExists: (name: string) => `Environment \"${name}\" already exists. Please choose another name.`,
@@ -211,6 +315,11 @@ function App() {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportingEnv, setExportingEnv] = useState<Environment | null>(null);
   const [showFeatureGuide, setShowFeatureGuide] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnosticsInfo, setDiagnosticsInfo] = useState<DiagnosticsInfo | null>(null);
+  const [showSourceConfig, setShowSourceConfig] = useState(false);
+  const [sourceConfigInfo, setSourceConfigInfo] = useState<SourceConfigInfo | null>(null);
+  const [selectedSourcePreset, setSelectedSourcePreset] = useState("tuna");
   const [locale, setLocale] = useState<Locale>(() => {
     const saved = localStorage.getItem("condatool-locale");
     return saved === "en" || saved === "zh" ? saved : "zh";
@@ -226,34 +335,89 @@ function App() {
 
   const subscribed = useRef(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const localeRef = useRef<Locale>(locale);
+  const selectedEnvPathRef = useRef<string | null>(selectedEnvPath);
+  const commandQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const activeCommandRef = useRef<CommandMeta | null>(null);
+  const activeCommandResultRef = useRef<boolean | null>(null);
+  const activeCommandDoneRef = useRef<((ok: boolean) => void) | null>(null);
+  const pendingSelectedEnvNameRef = useRef<string | null>(null);
+  const pendingLogsRef = useRef<string[]>([]);
+  const logFlushTimerRef = useRef<number | null>(null);
+  const selectedSourcePresetRef = useRef(selectedSourcePreset);
 
   const forceNoRuntime = String(import.meta.env.VITE_FORCE_RUNTIME_MISSING || import.meta.env.VITE_FORCE_NO_CONDA || "").toLowerCase();
   const isForceNoRuntime = forceNoRuntime === "1" || forceNoRuntime === "true";
-    const effectiveTheme = themeMode === "system" ? (systemPrefersDark ? "dark" : "light") : themeMode;
+  const effectiveTheme = themeMode === "system" ? (systemPrefersDark ? "dark" : "light") : themeMode;
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const t = i18n[locale];
 
   const getEnvName = (fullPath: string) => fullPath.split(/[\\/]/).pop() || fullPath;
 
   const handleCommandError = (rawError: string) => {
+    const currentText = i18n[localeRef.current];
     const normalized = rawError.toLowerCase();
 
     if (normalized.includes("runtime missing")) {
-      setError(t.runtimeMissingError);
+      setError(currentText.runtimeMissingError);
       setShowCondaInstallGuide(true);
       return;
     }
 
     if (normalized.includes("backend startup failed")) {
-      setError(t.backendStartupError);
+      setError(currentText.backendStartupError);
       return;
     }
 
     if (normalized.includes("package manager init failed")) {
-      setError(t.packageManagerInitError);
+      setError(currentText.packageManagerInitError);
       return;
     }
 
     setError(rawError);
+  };
+
+  const flushLogs = () => {
+    if (logFlushTimerRef.current !== null) {
+      window.clearTimeout(logFlushTimerRef.current);
+      logFlushTimerRef.current = null;
+    }
+
+    if (pendingLogsRef.current.length === 0) return;
+
+    const batchedLogs = pendingLogsRef.current;
+    pendingLogsRef.current = [];
+
+    startTransition(() => {
+      setLogs((prev) => {
+        const nextLogs = [...prev, ...batchedLogs];
+        return nextLogs.length > MAX_LOG_LINES ? nextLogs.slice(-MAX_LOG_LINES) : nextLogs;
+      });
+    });
+  };
+
+  const queueLog = (line: string) => {
+    pendingLogsRef.current.push(line);
+
+    if (pendingLogsRef.current.length >= LOG_BATCH_SIZE) {
+      flushLogs();
+      return;
+    }
+
+    if (logFlushTimerRef.current !== null) return;
+
+    logFlushTimerRef.current = window.setTimeout(() => {
+      flushLogs();
+    }, LOG_FLUSH_DELAY_MS);
+  };
+
+  const clearLogs = () => {
+    pendingLogsRef.current = [];
+    if (logFlushTimerRef.current !== null) {
+      window.clearTimeout(logFlushTimerRef.current);
+      logFlushTimerRef.current = null;
+    }
+    setLogs([]);
   };
 
   const openExternalLink = async (url: string) => {
@@ -292,29 +456,92 @@ function App() {
     }
   }, [logs]);
 
-  const runCommand = async (command: string, extraArgs: string[] = []) => {
-    if (running) return;
+  useEffect(() => {
+    return () => {
+      pendingLogsRef.current = [];
+      if (logFlushTimerRef.current !== null) {
+        window.clearTimeout(logFlushTimerRef.current);
+      }
+    };
+  }, []);
 
-    const finalArgs = [command, ...extraArgs].filter((arg) => arg !== "");
-    const commandForLog = finalArgs.join(" ");
+  useEffect(() => {
+    localeRef.current = locale;
+  }, [locale]);
 
-    setRunning(commandForLog);
-    setLogs((prev) => [...prev, `\n--- Starting command: ${commandForLog} ---`]);
-    setError(null);
+  useEffect(() => {
+    selectedEnvPathRef.current = selectedEnvPath;
+  }, [selectedEnvPath]);
 
-    if (isForceNoRuntime) {
-      setLogs((prev) => [...prev, `[SIMULATED] VITE_FORCE_RUNTIME_MISSING is enabled, skip command: ${commandForLog}`]);
-      handleCommandError("package manager init failed: executable not found");
-      setRunning(null);
+  useEffect(() => {
+    selectedSourcePresetRef.current = selectedSourcePreset;
+  }, [selectedSourcePreset]);
+
+  const reconcileSelectedEnvironment = (nextEnvironments: Environment[]) => {
+    const pendingSelectedEnvName = pendingSelectedEnvNameRef.current;
+    if (pendingSelectedEnvName) {
+      pendingSelectedEnvNameRef.current = null;
+      const matchedEnv = nextEnvironments.find((env) => getEnvName(env.path).toLowerCase() === pendingSelectedEnvName.toLowerCase());
+
+      if (!matchedEnv) {
+        setSelectedEnvPath(null);
+        setPackages([]);
+        return;
+      }
+
+      setSelectedEnvPath(matchedEnv.path);
+      setPackages([]);
+      void runCommand("pkg-list", ["--prefix", matchedEnv.path], { command: "pkg-list", envPath: matchedEnv.path });
       return;
     }
 
-    try {
-      await invoke("run_backend", { args: finalArgs });
-    } catch (e: any) {
-      handleCommandError(String(e));
-      setRunning(null);
+    const currentSelectedEnvPath = selectedEnvPathRef.current;
+    if (!currentSelectedEnvPath) return;
+
+    const selectedStillExists = nextEnvironments.some((env) => env.path === currentSelectedEnvPath);
+    if (!selectedStillExists) {
+      setSelectedEnvPath(null);
+      setPackages([]);
     }
+  };
+
+  const runCommand = async (command: string, extraArgs: string[] = [], meta?: Partial<CommandMeta>) => {
+    const finalArgs = [command, ...extraArgs].filter((arg) => arg !== "");
+    const commandForLog = finalArgs.join(" ");
+
+    const execute = async () => {
+      setRunning(commandForLog);
+      queueLog(`\n--- Starting command: ${commandForLog} ---`);
+      setError(null);
+      activeCommandRef.current = { command, ...meta };
+      activeCommandResultRef.current = null;
+
+      if (isForceNoRuntime) {
+        queueLog(`[SIMULATED] VITE_FORCE_RUNTIME_MISSING is enabled, skip command: ${commandForLog}`);
+        handleCommandError("package manager init failed: executable not found");
+        return false;
+      }
+
+      try {
+        const completed = new Promise<boolean>((resolve) => {
+          activeCommandDoneRef.current = resolve;
+        });
+        await invoke("run_backend", { args: finalArgs });
+        return await completed;
+      } catch (e: any) {
+        handleCommandError(String(e));
+        return false;
+      } finally {
+        activeCommandRef.current = null;
+        activeCommandResultRef.current = null;
+        activeCommandDoneRef.current = null;
+        setRunning(null);
+      }
+    };
+
+    const queued = commandQueueRef.current.then(execute, execute);
+    commandQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
   };
 
   useEffect(() => {
@@ -327,6 +554,7 @@ function App() {
         try {
           const result = JSON.parse(line);
           const cmd = result.command;
+          activeCommandResultRef.current = result.ok === true;
 
           if (cmd === "probe") {
             if (result.ok) {
@@ -338,42 +566,78 @@ function App() {
           } else if (cmd === "env-list") {
             if (result.ok) {
               setEnvironments(result.data);
+              reconcileSelectedEnvironment(result.data);
             } else {
               handleCommandError(result.error);
             }
           } else if (cmd === "pkg-list") {
+            const requestedEnvPath = activeCommandRef.current?.envPath;
             if (result.ok) {
-              setPackages(result.data);
+              if (requestedEnvPath && requestedEnvPath === selectedEnvPathRef.current) {
+                setPackages(result.data);
+              }
             } else {
               handleCommandError(result.error);
-              setPackages([]);
+              if (requestedEnvPath && requestedEnvPath === selectedEnvPathRef.current) {
+                setPackages([]);
+              }
+            }
+          } else if (cmd === "diagnostics") {
+            if (result.ok) {
+              setDiagnosticsInfo(result.data);
+            } else {
+              handleCommandError(result.error);
+            }
+          } else if (cmd === "source-config-get") {
+            if (result.ok) {
+              setSourceConfigInfo(result.data);
+            } else {
+              handleCommandError(result.error);
+            }
+          } else if (cmd === "source-config-apply-preset") {
+            if (result.ok) {
+              setSourceConfigInfo(result.data);
+              queueLog(i18n[localeRef.current].sourceConfigApplySuccess(selectedSourcePresetRef.current));
+            } else {
+              handleCommandError(result.error);
             }
           } else if (["env-create", "env-remove", "env-rename", "env-import", "env-clone"].includes(cmd)) {
             if (result.ok) {
+              if (activeCommandRef.current?.clearSelectedEnvOnSuccess) {
+                setSelectedEnvPath(null);
+                setPackages([]);
+              }
+
+              if (activeCommandRef.current?.nextSelectedEnvName) {
+                pendingSelectedEnvNameRef.current = activeCommandRef.current.nextSelectedEnvName;
+              }
+
               const action = cmd.split("-")[1];
-              setLogs((prev) => [...prev, `--- Environment ${action} operation successful. Refreshing list... ---`]);
-              handleLoadEnvs(false);
+              queueLog(`--- Environment ${action} operation successful. Refreshing list... ---`);
+              void handleLoadEnvs(false);
             } else {
               handleCommandError(result.error);
             }
           } else if (cmd === "env-export") {
             if (result.ok) {
-              setLogs((prev) => [...prev, "--- Environment exported successfully. ---"]);
+              queueLog("--- Environment exported successfully. ---");
             } else {
               handleCommandError(result.error);
             }
           }
         } catch {
-          setLogs((prev) => [...prev, line]);
+          queueLog(line);
         }
       });
 
       const unlistenStderr = await listen<string>("backend://stderr", (event) => {
-        setLogs((prev) => [...prev, `[ERR] ${event.payload}`]);
+        queueLog(`[ERR] ${event.payload}`);
       });
 
       const unlistenTerminated = await listen<string>("backend://terminated", () => {
-        setRunning(null);
+        flushLogs();
+        const currentResult = activeCommandResultRef.current;
+        activeCommandDoneRef.current?.(currentResult === true);
       });
 
       return () => {
@@ -383,8 +647,11 @@ function App() {
       };
     };
 
-    const unlistenPromise = setupListeners();
-    runCommand("probe");
+    const unlistenPromise = (async () => {
+      const cleanup = await setupListeners();
+      await runCommand("probe");
+      return cleanup;
+    })();
 
     return () => {
       unlistenPromise.then((cleanup) => cleanup && cleanup());
@@ -393,9 +660,10 @@ function App() {
 
   const handleLoadEnvs = async (probeFirst = true) => {
     if (probeFirst) {
-      await runCommand("probe");
+      const probeSucceeded = await runCommand("probe");
+      if (!probeSucceeded) return;
     }
-    runCommand("env-list");
+    await runCommand("env-list");
   };
 
   const isEnvNameExists = (name: string) => {
@@ -417,7 +685,7 @@ function App() {
     const pythonVersion = prompt(t.pythonPrompt, "3.10");
     if (!pythonVersion || !pythonVersion.trim()) return;
 
-    runCommand("env-create", ["--name", trimmedName, "--python", pythonVersion.trim()]);
+    void runCommand("env-create", ["--name", trimmedName, "--python", pythonVersion.trim()]);
   };
 
   const handleEnvSelect = (env: Environment) => {
@@ -425,7 +693,7 @@ function App() {
     setSelectedEnvPath(env.path);
     setPackages([]);
     setSearchQuery("");
-    runCommand("pkg-list", ["--prefix", env.path]);
+    void runCommand("pkg-list", ["--prefix", env.path], { command: "pkg-list", envPath: env.path });
   };
 
   const handleRemoveEnv = async (env: Environment) => {
@@ -434,11 +702,11 @@ function App() {
     const confirmed = await confirm(t.removeConfirm(envName), { title: t.removeConfirmTitle });
     if (!confirmed) return;
 
-    if (selectedEnvPath === env.path) {
-      setSelectedEnvPath(null);
-      setPackages([]);
-    }
-    runCommand("env-remove", ["--prefix", env.path]);
+    void runCommand("env-remove", ["--prefix", env.path], {
+      command: "env-remove",
+      envPath: env.path,
+      clearSelectedEnvOnSuccess: selectedEnvPath === env.path,
+    });
   };
 
   const handleRenameEnv = async (env: Environment) => {
@@ -455,7 +723,11 @@ function App() {
       return;
     }
 
-    runCommand("env-rename", ["--old-prefix", env.path, "--new-name", trimmedName]);
+    void runCommand("env-rename", ["--old-prefix", env.path, "--new-name", trimmedName], {
+      command: "env-rename",
+      envPath: env.path,
+      nextSelectedEnvName: selectedEnvPath === env.path ? trimmedName : undefined,
+    });
   };
 
   const handleCloneEnv = async (env: Environment) => {
@@ -475,7 +747,7 @@ function App() {
       return;
     }
 
-    runCommand("env-clone", ["--source-prefix", env.path, "--dest-name", trimmedName]);
+    void runCommand("env-clone", ["--source-prefix", env.path, "--dest-name", trimmedName]);
   };
 
   const openExportModal = (env: Environment) => {
@@ -497,7 +769,7 @@ function App() {
     });
 
     if (filePath) {
-      runCommand("env-export", ["--name", envName, "--file", filePath, "--format", format, noBuilds ? "--no-builds" : ""]);
+      void runCommand("env-export", ["--name", envName, "--file", filePath, "--format", format, noBuilds ? "--no-builds" : ""]);
     }
 
     setIsExportModalOpen(false);
@@ -524,7 +796,27 @@ function App() {
       return;
     }
 
-    runCommand("env-import", ["--file", filePath, "--name", trimmedName]);
+    void runCommand("env-import", ["--file", filePath, "--name", trimmedName]);
+  };
+
+  const handleOpenDiagnostics = async () => {
+    setShowDiagnostics(true);
+    if (running) return;
+    await runCommand("diagnostics");
+  };
+
+  const handleOpenSourceConfig = async () => {
+    setShowSourceConfig(true);
+    if (running) return;
+    await runCommand("source-config-get");
+  };
+
+  const handleApplySourcePreset = async () => {
+    if (running) return;
+    const success = await runCommand("source-config-apply-preset", ["--preset", selectedSourcePreset]);
+    if (!success) {
+      await message(t.sourceConfigApplyFailed);
+    }
   };
 
   const sortedEnvironments = useMemo(() => {
@@ -540,9 +832,10 @@ function App() {
   }, [environments, condaInfo]);
 
   const filteredPackages = useMemo(() => {
-    if (!searchQuery) return packages;
-    return packages.filter((pkg) => pkg.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [packages, searchQuery]);
+    const normalizedQuery = deferredSearchQuery.trim().toLowerCase();
+    if (!normalizedQuery) return packages;
+    return packages.filter((pkg) => pkg.name.toLowerCase().includes(normalizedQuery));
+  }, [packages, deferredSearchQuery]);
 
   const selectedEnvName = selectedEnvPath ? getEnvName(selectedEnvPath) : "";
 
@@ -596,6 +889,195 @@ function App() {
         </div>
       )}
 
+      {showDiagnostics && (
+        <div className="guide-overlay">
+          <div className="guide-card diagnostics-card">
+            <div className="diagnostics-head">
+              <h2>{t.diagnosticsTitle}</h2>
+              <button className="btn btn-secondary" onClick={() => void runCommand("diagnostics")} disabled={!!running}>
+                {t.diagnosticsRefresh}
+              </button>
+            </div>
+
+            {!diagnosticsInfo ? (
+              <p>{t.diagnosticsLoading}</p>
+            ) : (
+              <div className="diagnostics-grid">
+                <section className="diagnostics-section">
+                  <h3>{t.diagnosticsPackageManager}</h3>
+                  <dl className="diagnostics-list">
+                    <div>
+                      <dt>{t.diagnosticsPackageManager}</dt>
+                      <dd>{diagnosticsInfo.package_manager_kind}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticsPackageManagerPath}</dt>
+                      <dd>{diagnosticsInfo.package_manager_path || t.diagnosticsNone}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticsCondaVersion}</dt>
+                      <dd>{diagnosticsInfo.conda_version}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticsPythonVersion}</dt>
+                      <dd>{diagnosticsInfo.python_version}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticsRootPrefix}</dt>
+                      <dd>{diagnosticsInfo.root_prefix || t.diagnosticsNone}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticsActiveEnv}</dt>
+                      <dd>{diagnosticsInfo.active_environment || t.diagnosticsNone}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.diagnosticsSslVerify}</dt>
+                      <dd>{String(diagnosticsInfo.ssl_verify ?? t.diagnosticsNone)}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.diagnosticsConfigFiles}</h3>
+                  <ul className="diagnostics-items">
+                    {(diagnosticsInfo.config_files.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.config_files).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.diagnosticsChannels}</h3>
+                  <ul className="diagnostics-items">
+                    {(diagnosticsInfo.channels.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.channels).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.diagnosticsProxy}</h3>
+                  {Object.keys(diagnosticsInfo.proxy_servers).length === 0 ? (
+                    <p className="hint">{t.diagnosticsNone}</p>
+                  ) : (
+                    <dl className="diagnostics-list">
+                      {Object.entries(diagnosticsInfo.proxy_servers).map(([key, value]) => (
+                        <div key={key}>
+                          <dt>{key}</dt>
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.diagnosticsEnvDirs}</h3>
+                  <ul className="diagnostics-items">
+                    {(diagnosticsInfo.envs_directories.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.envs_directories).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.diagnosticsPkgCaches}</h3>
+                  <ul className="diagnostics-items">
+                    {(diagnosticsInfo.package_cache_directories.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.package_cache_directories).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+              </div>
+            )}
+
+            <div className="guide-actions">
+              <button className="btn btn-primary" onClick={() => setShowDiagnostics(false)}>{t.diagnosticsClose}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSourceConfig && (
+        <div className="guide-overlay">
+          <div className="guide-card diagnostics-card">
+            <div className="diagnostics-head">
+              <h2>{t.sourceConfigTitle}</h2>
+              <button className="btn btn-secondary" onClick={() => void runCommand("source-config-get")} disabled={!!running}>
+                {t.sourceConfigRefresh}
+              </button>
+            </div>
+
+            {!sourceConfigInfo ? (
+              <p>{t.sourceConfigLoading}</p>
+            ) : (
+              <div className="diagnostics-grid">
+                <section className="diagnostics-section">
+                  <h3>{t.sourceConfigPreset}</h3>
+                  <div className="source-preset-actions">
+                    <select value={selectedSourcePreset} onChange={(e) => setSelectedSourcePreset(e.target.value)} disabled={!!running}>
+                      <option value="defaults">{t.sourceConfigDefaultsLabel}</option>
+                      <option value="tuna">{t.sourceConfigTunaLabel}</option>
+                    </select>
+                    <button className="btn btn-primary" onClick={() => void handleApplySourcePreset()} disabled={!!running}>
+                      {t.sourceConfigApply}
+                    </button>
+                  </div>
+                  <dl className="diagnostics-list">
+                    <div>
+                      <dt>{t.sourceConfigCurrentFile}</dt>
+                      <dd>{sourceConfigInfo.config_file}</dd>
+                    </div>
+                    <div>
+                      <dt>{t.sourceConfigPriority}</dt>
+                      <dd>{sourceConfigInfo.channel_priority}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.sourceConfigChannels}</h3>
+                  <ul className="diagnostics-items">
+                    {(sourceConfigInfo.channels.length === 0 ? [t.diagnosticsNone] : sourceConfigInfo.channels).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.sourceConfigDefaultChannels}</h3>
+                  <ul className="diagnostics-items">
+                    {(sourceConfigInfo.default_channels.length === 0 ? [t.diagnosticsNone] : sourceConfigInfo.default_channels).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </section>
+
+                <section className="diagnostics-section">
+                  <h3>{t.sourceConfigCustomChannels}</h3>
+                  {Object.keys(sourceConfigInfo.custom_channels).length === 0 ? (
+                    <p className="hint">{t.diagnosticsNone}</p>
+                  ) : (
+                    <dl className="diagnostics-list">
+                      {Object.entries(sourceConfigInfo.custom_channels).map(([key, value]) => (
+                        <div key={key}>
+                          <dt>{key}</dt>
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                </section>
+              </div>
+            )}
+
+            <div className="guide-actions">
+              <button className="btn btn-primary" onClick={() => setShowSourceConfig(false)}>{t.sourceConfigClose}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="app-shell">
         <header className="topbar">
           <div>
@@ -638,6 +1120,8 @@ function App() {
               </button>
             </div>
             <button className="btn btn-secondary" onClick={() => handleLoadEnvs(true)} disabled={!!running}>{t.refreshEnv}</button>
+            <button className="btn btn-secondary" onClick={() => void handleOpenSourceConfig()}>{t.sourceConfig}</button>
+            <button className="btn btn-secondary" onClick={() => void handleOpenDiagnostics()}>{t.diagnostics}</button>
             <button className="btn btn-secondary" onClick={() => setShowFeatureGuide(true)}>{t.featureGuide}</button>
             <button className="btn btn-secondary" onClick={handleImportEnv} disabled={!!running}>{t.importEnv}</button>
             <button className="btn btn-primary" onClick={handleCreateEnv} disabled={!!running}>{t.createEnv}</button>
@@ -751,7 +1235,7 @@ function App() {
           <section className="panel log-panel">
             <div className="panel-head">
               <h2>{t.panelLog}</h2>
-              <button className="btn btn-ghost" onClick={() => setLogs([])} disabled={logs.length === 0}>{t.clear}</button>
+              <button className="btn btn-ghost" onClick={clearLogs} disabled={logs.length === 0 && pendingLogsRef.current.length === 0}>{t.clear}</button>
             </div>
             <div className="panel-body log-body" ref={logContainerRef}>
               {logs.length === 0 ? <em>{t.startupProbe}</em> : logs.map((line, i) => <div key={i}>{line}</div>)}

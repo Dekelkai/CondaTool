@@ -2,7 +2,7 @@
 
 [中文版介绍 (Chinese Version)](README_zh-CN.md)
 
-CondaTools is a fast, lightweight, and modern Desktop GUI for managing Conda environments. Built with **Tauri**, **React (Vite)**, and **Python**, it allows you to effortlessly view, create, clone, rename, and export your Conda environments without touching the terminal.
+CondaTools is a fast, lightweight, and modern Desktop GUI for managing Conda environments. Built with **Tauri**, **React (Vite)**, and **Python**, it allows you to view, create, clone, rename, export, diagnose, and switch source presets for your Conda environments without touching the terminal.
 
 ![Tech Stack](https://img.shields.io/badge/Tauri-2.x-orange?logo=tauri)
 ![Tech Stack](https://img.shields.io/badge/React-19-blue?logo=react)
@@ -14,6 +14,8 @@ CondaTools is a fast, lightweight, and modern Desktop GUI for managing Conda env
 - **Environment Management**: Create, delete, clone, and rename environments through an intuitive UI.
 - **Package Viewer**: Select an environment to view and search all installed packages, versions, and channels.
 - **Import/Export**: Export environments to `yml` or `txt` files (with or without build numbers), or import an environment from a file.
+- **Diagnostics**: Inspect the current package manager, root/base path, config files, channels, proxies, and cache directories.
+- **Source Presets**: View current source configuration and switch between official defaults and the TUNA mirror preset with one click.
 - **Real-Time Logs**: Built-in console viewer displays real-time execution logs and exact conda commands running in the background.
 
 ## 🛠️ Architecture
@@ -47,6 +49,6 @@ npm run tauri build
 The output will be located in `src-tauri/target/release/`. 
 
 > **Important Note**: 
-> The application currently utilizes the system's Conda installation to manage environments. When distributing this app, the user's machine **must** have Python and Conda installed and accessible in their system `PATH`.
+> The current release bundles `backend.exe` and `micromamba.exe` runtime files for diagnostics, source configuration, and environment operations.
 > 
 > *Advanced (Future)*: To remove the Python dependency for end-users, you can compile the `backend/main.py` into a standalone binary using tools like **PyInstaller**, and configure Tauri to bundle it as a **Sidecar** executable.

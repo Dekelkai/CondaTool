@@ -63,6 +63,22 @@ def get_package_manager_path():
     return None
 
 
+def get_package_manager_kind():
+    package_manager_path = get_package_manager_path()
+    if not package_manager_path:
+        return "unknown"
+
+    executable_name = os.path.basename(package_manager_path).lower()
+    if "micromamba" in executable_name:
+        return "micromamba"
+    if executable_name == "mamba.exe" or executable_name == "mamba":
+        return "mamba"
+    if "conda" in executable_name:
+        return "conda"
+
+    return executable_name or "unknown"
+
+
 def run_package_manager_command_for_json(args: list, command_name: str):
     """
     Execute package manager command and parse JSON output.

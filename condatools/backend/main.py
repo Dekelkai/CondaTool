@@ -2,6 +2,9 @@
 import argparse
 from CondaTool_conda.commands import (
     cmd_probe,
+    cmd_diagnostics,
+    cmd_source_config_get,
+    cmd_source_config_apply_preset,
     cmd_env_list,
     cmd_pkg_list,
     cmd_env_create,
@@ -21,6 +24,13 @@ def main():
 
     # Environment info
     sub.add_parser("probe", help="Probe package manager availability").set_defaults(func=cmd_probe)
+    sub.add_parser("diagnostics", help="Collect package manager diagnostics").set_defaults(func=cmd_diagnostics)
+    sub.add_parser("source-config-get", help="Read source/channel configuration").set_defaults(func=cmd_source_config_get)
+
+    source_preset_parser = sub.add_parser("source-config-apply-preset", help="Apply a predefined source configuration preset")
+    source_preset_parser.add_argument("--preset", required=True)
+    source_preset_parser.set_defaults(func=cmd_source_config_apply_preset)
+
     sub.add_parser("env-list", help="List all environments").set_defaults(func=cmd_env_list)
 
     # Package info
