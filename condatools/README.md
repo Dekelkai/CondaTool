@@ -52,3 +52,67 @@ The output will be located in `src-tauri/target/release/`.
 > The current release bundles `backend.exe` and `micromamba.exe` runtime files for diagnostics, source configuration, and environment operations.
 > 
 > *Advanced (Future)*: To remove the Python dependency for end-users, you can compile the `backend/main.py` into a standalone binary using tools like **PyInstaller**, and configure Tauri to bundle it as a **Sidecar** executable.
+
+## 🔐 Code Signing
+
+Unsigned runtime binaries are more likely to be quarantined by Windows Defender or other endpoint security products after installation. This project now includes signing scripts, but you still need your own code signing certificate.
+
+### Supported modes
+
+1. Local PFX certificate with `signtool.exe`
+2. Azure Trusted Signing with `trusted-signing-cli`
+
+### Required input for local PFX signing
+
+1. A PFX certificate file
+2. The certificate password
+3. Windows SDK Signing Tools (`signtool.exe`)
+
+### Sign release artifacts with local PFX
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release.ps1 \
+  -CertificatePath "C:\path\to\your-cert.pfx" \
+  -CertificatePassword "your-password"
+```
+
+You can also use environment variables:
+
+```powershell
+$env:CONDATOOL_SIGN_CERT_PATH = "C:\path\to\your-cert.pfx"
+$env:CONDATOOL_SIGN_CERT_PASSWORD = "your-password"
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release.ps1
+```
+
+### Build + sign in one step
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 \
+  -Sign \
+  -CertificatePath "C:\path\to\your-cert.pfx" \
+  -CertificatePassword "your-password"
+```
+
+### Azure Trusted Signing
+
+Install the CLI first:
+
+```powershell
+cargo install trusted-signing-cli
+```
+
+Then configure environment variables:
+
+```powershell
+$env:CONDATOOL_TRUSTED_SIGNING_ENDPOINT = "https://wus2.codesigning.azure.net"
+$env:CONDATOOL_TRUSTED_SIGNING_ACCOUNT = "YourAccount"
+$env:CONDATOOL_TRUSTED_SIGNING_PROFILE = "YourProfile"
+```
+
+Run the release pipeline with Trusted Signing:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 \
+  -Sign \
+  -SignMode trusted-signing
+```

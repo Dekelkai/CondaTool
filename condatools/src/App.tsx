@@ -355,6 +355,7 @@ function App() {
   const getEnvName = (fullPath: string) => fullPath.split(/[\\/]/).pop() || fullPath;
 
   const handleCommandError = (rawError: string) => {
+    queueLog(`[ERR] ${rawError}`);
     const currentText = i18n[localeRef.current];
     const normalized = rawError.toLowerCase();
 

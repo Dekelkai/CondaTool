@@ -50,5 +50,69 @@ npm run tauri build
 
 > **⚠️ 重要打包说明**：
 > 当前发布版本会随安装包携带 `backend.exe` 与 `micromamba.exe` 运行时，用于环境探测、诊断、源配置与环境管理能力。
+
+## 🔐 代码签名
+
+未签名的运行时二进制更容易在其他 Windows 机器上被 Defender 或企业安全软件隔离。项目现在已经提供签名脚本，但仍然需要你自己的代码签名证书。
+
+### 支持的模式
+
+1. 本地 PFX 证书 + `signtool.exe`
+2. Azure Trusted Signing + `trusted-signing-cli`
+
+### 本地 PFX 签名所需准备
+
+1. 一个 PFX 证书文件
+2. 证书密码
+3. Windows SDK Signing Tools（`signtool.exe`）
+
+### 使用本地 PFX 对发布产物签名
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release.ps1 \
+  -CertificatePath "C:\path\to\your-cert.pfx" \
+  -CertificatePassword "your-password"
+```
+
+也可以通过环境变量提供：
+
+```powershell
+$env:CONDATOOL_SIGN_CERT_PATH = "C:\path\to\your-cert.pfx"
+$env:CONDATOOL_SIGN_CERT_PASSWORD = "your-password"
+powershell -ExecutionPolicy Bypass -File .\scripts\sign-release.ps1
+```
+
+### 构建并签名
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 \
+  -Sign \
+  -CertificatePath "C:\path\to\your-cert.pfx" \
+  -CertificatePassword "your-password"
+```
+
+### Azure Trusted Signing
+
+先安装 CLI：
+
+```powershell
+cargo install trusted-signing-cli
+```
+
+然后配置环境变量：
+
+```powershell
+$env:CONDATOOL_TRUSTED_SIGNING_ENDPOINT = "https://wus2.codesigning.azure.net"
+$env:CONDATOOL_TRUSTED_SIGNING_ACCOUNT = "YourAccount"
+$env:CONDATOOL_TRUSTED_SIGNING_PROFILE = "YourProfile"
+```
+
+用 Trusted Signing 执行发布：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\release.ps1 \
+  -Sign \
+  -SignMode trusted-signing
+```
 > 
 > *进阶方案*：如果您想要实现完全绿色的“点开即用”，没有任何外部环境依赖。您可以后续使用 **PyInstaller** 将 `backend/main.py` 编译为一个独立的二级可执行文件，并通过 Tauri 的 **Sidecar（附加程序）** 机制将其挂载到应用内。

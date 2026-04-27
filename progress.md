@@ -132,7 +132,7 @@
   - `progress.md`
 
 ### 阶段 12：源配置与发版
-- **状态：** in_progress
+- **状态：** complete
 - 执行的操作：
   - 确认 `micromamba` 与 `conda` 的源配置读取来源
   - 验证 `.condarc` 是当前共同配置入口
@@ -153,6 +153,17 @@
   - `condatools/README.md`
   - `condatools/README_zh-CN.md`
   - `feature_roadmap.md`
+  - `task_plan.md`
+  - `findings.md`
+  - `progress.md`
+
+### 阶段 13：签名流程接入
+- **状态：** in_progress
+- 执行的操作：
+  - 确认当前 runtime 二进制未签名
+  - 准备接入本地签名脚本与文档
+  - 评估签名在发布流程中的插入点
+- 创建/修改的文件：
   - `task_plan.md`
   - `findings.md`
   - `progress.md`
@@ -185,6 +196,7 @@
 | 源配置读取验证 | `python main.py ... source-config-get` | 返回当前统一源配置结构 | 成功返回 channels/default_channels/custom_channels/channel_priority | 通过 |
 | 源配置切换验证 | `python main.py ... source-config-apply-preset --preset defaults/tuna` | 可在两套预设间切换并正确读回 | 已成功切换并读回 `~/.condarc` 受管片段 | 通过 |
 | 0.2.0 最终打包测试 | `npm run tauri build` | 生成 0.2.0 安装包 | 成功生成 `CondaTool_0.2.0_x64_en-US.msi` 与 `CondaTool_0.2.0_x64-setup.exe` | 通过 |
+| runtime 签名检查 | `Get-AuthenticodeSignature` | 确认当前签名状态 | `backend.exe` 与 `micromamba.exe` 均为 `NotSigned` | 通过 |
 
 ## 错误日志
 | 时间戳 | 错误 | 尝试次数 | 解决方案 |
@@ -199,13 +211,14 @@
 | 2026-04-27 | `micromamba info` 返回结构与诊断页所需字段不一致 | 1 | 在后端新增 `diagnostics` 统一输出 |
 | 2026-04-27 | `micromamba config set` 对 `custom_channels.<name>` 这种嵌套键支持不足 | 1 | 改为统一使用 `conda config --file ~/.condarc` 写入源配置 |
 | 2026-04-27 | `config list/show` 会把默认值或派生值混入源配置展示 | 1 | 改为直接解析 `~/.condarc` 中的受管片段 |
+| 2026-04-27 | 发布包中的 runtime 为未签名二进制 | 1 | 接入签名脚本与发布流程 |
 
 ## 五问重启检查
 | 问题 | 答案 |
 |------|------|
-| 我在哪里？ | 阶段 12 |
-| 我要去哪里？ | 完成 git 提交、push 与 GitHub Release |
-| 目标是什么？ | 把源配置做成一个可用、可发布的 0.2.0 功能版本 |
+| 我在哪里？ | 阶段 13 |
+| 我要去哪里？ | 接入可执行的签名流程，并在具备证书时产出已签名安装包 |
+| 目标是什么？ | 解决未签名 runtime 导致发布包在别的机器上不稳定的问题 |
 | 我学到了什么？ | 见 findings.md |
 | 我做了什么？ | 见上方记录 |
 

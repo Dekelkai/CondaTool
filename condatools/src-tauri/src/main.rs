@@ -7,22 +7,37 @@ use std::process::{Command, Stdio};
 use std::thread;
 use tauri::{AppHandle, Emitter, Manager, Window};
 
+fn push_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
+    }
+}
+
 fn resolve_runtime_binary(app: &AppHandle, binary_name: &str) -> Result<PathBuf, String> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     // Packaged app resource location.
     if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("runtime").join(binary_name));
+        push_candidate(&mut candidates, resource_dir.join("runtime").join(binary_name));
     }
 
     // Development fallback: src-tauri/resources/runtime
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(manifest_dir.join("resources").join("runtime").join(binary_name));
+    push_candidate(&mut candidates, manifest_dir.join("resources").join("runtime").join(binary_name));
 
-    // Development fallback: next to executable.
+    // Release fallback: bundled resources next to the installed executable.
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            candidates.push(exe_dir.join("runtime").join(binary_name));
+            push_candidate(&mut candidates, exe_dir.join("resources").join("runtime").join(binary_name));
+
+            // Portable/development fallback: runtime directly next to executable.
+            push_candidate(&mut candidates, exe_dir.join("runtime").join(binary_name));
+
+            // Some installers place the executable one level deeper than resources.
+            if let Some(parent_dir) = exe_dir.parent() {
+                push_candidate(&mut candidates, parent_dir.join("resources").join("runtime").join(binary_name));
+                push_candidate(&mut candidates, parent_dir.join("runtime").join(binary_name));
+            }
         }
     }
 
