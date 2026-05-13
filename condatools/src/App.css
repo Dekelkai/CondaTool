@@ -266,6 +266,7 @@ input {
 .package-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-bottom: 10px;
 }
 
@@ -586,6 +587,80 @@ tbody tr:hover {
   color: var(--text);
 }
 
+/* Channel management */
+.channel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.channel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.channel-name {
+  font-size: 13px;
+  color: var(--text);
+  word-break: break-all;
+  flex: 1;
+}
+
+.channel-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.channel-actions .icon-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+}
+
+.channel-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.channel-add-row .input-modal-input {
+  flex: 1;
+}
+
+.channel-add-row .btn {
+  height: 38px;
+  min-width: 38px;
+}
+
+/* Package search */
+.pkg-search-input-row {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.pkg-search-input-row .input-modal-input {
+  flex: 1;
+}
+
+.pkg-search-results {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.pkg-search-results table {
+  width: 100%;
+}
+
 @media (max-width: 1280px) {
   .app-grid {
     grid-template-columns: 1fr;
@@ -709,6 +784,26 @@ tbody tr:hover {
   margin: 0;
   color: var(--danger);
   font-size: 13px;
+}
+
+/* ProxyConfigModal */
+.proxy-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.proxy-config-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.proxy-config-checkbox-row input[type="checkbox"] {
+  accent-color: var(--primary);
 }
 
 @media (max-width: 760px) {

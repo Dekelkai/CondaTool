@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Translation } from "./i18n";
 
 interface SourceConfigInfo {
@@ -17,6 +18,9 @@ interface SourceConfigModalProps {
   onPresetChange: (preset: string) => void;
   onRefresh: () => void;
   onApply: () => void;
+  onAddChannel: (channel: string) => void;
+  onRemoveChannel: (channel: string) => void;
+  onMoveChannel: (channel: string, direction: "up" | "down") => void;
   onClose: () => void;
 }
 
@@ -28,11 +32,23 @@ export function SourceConfigModal({
   onPresetChange,
   onRefresh,
   onApply,
+  onAddChannel,
+  onRemoveChannel,
+  onMoveChannel,
   onClose,
 }: SourceConfigModalProps) {
+  const [newChannel, setNewChannel] = useState("");
+
+  const handleAddChannel = () => {
+    const channel = newChannel.trim();
+    if (!channel) return;
+    onAddChannel(channel);
+    setNewChannel("");
+  };
+
   return (
-    <div className="guide-overlay">
-      <div className="guide-card diagnostics-card">
+    <div className="guide-overlay" onClick={onClose}>
+      <div className="guide-card diagnostics-card" onClick={(e) => e.stopPropagation()}>
         <div className="diagnostics-head">
           <h2>{t.sourceConfigTitle}</h2>
           <button className="btn btn-secondary" onClick={onRefresh} disabled={!!running}>
@@ -69,11 +85,53 @@ export function SourceConfigModal({
 
             <section className="diagnostics-section">
               <h3>{t.sourceConfigChannels}</h3>
-              <ul className="diagnostics-items">
-                {(sourceConfigInfo.channels.length === 0 ? [t.diagnosticsNone] : sourceConfigInfo.channels).map((item) => (
-                  <li key={item}>{item}</li>
+              <div className="channel-list">
+                {sourceConfigInfo.channels.map((channel, idx) => (
+                  <div key={channel} className="channel-item">
+                    <span className="channel-name">{channel}</span>
+                    <div className="channel-actions">
+                      <button
+                        className="icon-btn"
+                        onClick={() => onMoveChannel(channel, "up")}
+                        disabled={!!running || idx === 0}
+                        title="↑"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        className="icon-btn"
+                        onClick={() => onMoveChannel(channel, "down")}
+                        disabled={!!running || idx === sourceConfigInfo.channels.length - 1}
+                        title="↓"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        className="icon-btn danger"
+                        onClick={() => onRemoveChannel(channel)}
+                        disabled={!!running}
+                        title={t.remove}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
                 ))}
-              </ul>
+                {sourceConfigInfo.channels.length === 0 && <p className="hint">{t.diagnosticsNone}</p>}
+              </div>
+              <div className="channel-add-row">
+                <input
+                  type="text"
+                  className="input-modal-input"
+                  placeholder="conda-forge"
+                  value={newChannel}
+                  onChange={(e) => setNewChannel(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddChannel()}
+                />
+                <button className="btn btn-primary" onClick={handleAddChannel} disabled={!!running || !newChannel.trim()}>
+                  +
+                </button>
+              </div>
             </section>
 
             <section className="diagnostics-section">

@@ -5,6 +5,12 @@ from CondaTool_conda.commands import (
     cmd_diagnostics,
     cmd_source_config_get,
     cmd_source_config_apply_preset,
+    cmd_source_config_add_channel,
+    cmd_source_config_remove_channel,
+    cmd_source_config_move_channel,
+    cmd_proxy_get,
+    cmd_proxy_set,
+    cmd_proxy_clear,
     cmd_env_list,
     cmd_pkg_list,
     cmd_env_create,
@@ -15,6 +21,9 @@ from CondaTool_conda.commands import (
     cmd_env_clone,
     cmd_pkg_install,
     cmd_pkg_remove,
+    cmd_pkg_upgrade,
+    cmd_pkg_upgrade_all,
+    cmd_pkg_search,
 )
 from CondaTool_conda.utils import set_package_manager_path
 
@@ -33,6 +42,32 @@ def main():
     source_preset_parser.add_argument("--preset", required=True)
     source_preset_parser.set_defaults(func=cmd_source_config_apply_preset)
 
+    add_channel_parser = sub.add_parser("source-config-add-channel", help="Add a channel to the channel list")
+    add_channel_parser.add_argument("--channel", required=True)
+    add_channel_parser.set_defaults(func=cmd_source_config_add_channel)
+
+    remove_channel_parser = sub.add_parser("source-config-remove-channel", help="Remove a channel from the channel list")
+    remove_channel_parser.add_argument("--channel", required=True)
+    remove_channel_parser.set_defaults(func=cmd_source_config_remove_channel)
+
+    move_channel_parser = sub.add_parser("source-config-move-channel", help="Move a channel up or down")
+    move_channel_parser.add_argument("--channel", required=True)
+    move_channel_parser.add_argument("--direction", required=True, choices=["up", "down"])
+    move_channel_parser.set_defaults(func=cmd_source_config_move_channel)
+
+    # Proxy configuration
+    sub.add_parser("proxy-get", help="Read proxy configuration").set_defaults(func=cmd_proxy_get)
+
+    proxy_set_parser = sub.add_parser("proxy-set", help="Set proxy configuration")
+    proxy_set_parser.add_argument("--http", required=False, default="")
+    proxy_set_parser.add_argument("--https", required=False, default="")
+    proxy_set_parser.add_argument("--ssl-verify", required=False, default=None)
+    proxy_set_parser.set_defaults(func=cmd_proxy_set)
+
+    proxy_clear_parser = sub.add_parser("proxy-clear", help="Clear proxy configuration")
+    proxy_clear_parser.add_argument("--ssl-verify", required=False, default=None)
+    proxy_clear_parser.set_defaults(func=cmd_proxy_clear)
+
     sub.add_parser("env-list", help="List all environments").set_defaults(func=cmd_env_list)
 
     # Package info
@@ -50,6 +85,19 @@ def main():
     pkg_remove_parser.add_argument("--prefix", required=True)
     pkg_remove_parser.add_argument("--name", required=True)
     pkg_remove_parser.set_defaults(func=cmd_pkg_remove)
+
+    pkg_upgrade_parser = sub.add_parser("pkg-upgrade", help="Upgrade a package in an environment")
+    pkg_upgrade_parser.add_argument("--prefix", required=True)
+    pkg_upgrade_parser.add_argument("--name", required=True)
+    pkg_upgrade_parser.set_defaults(func=cmd_pkg_upgrade)
+
+    pkg_upgrade_all_parser = sub.add_parser("pkg-upgrade-all", help="Upgrade all packages in an environment")
+    pkg_upgrade_all_parser.add_argument("--prefix", required=True)
+    pkg_upgrade_all_parser.set_defaults(func=cmd_pkg_upgrade_all)
+
+    pkg_search_parser = sub.add_parser("pkg-search", help="Search for packages in remote channels")
+    pkg_search_parser.add_argument("--query", required=True)
+    pkg_search_parser.set_defaults(func=cmd_pkg_search)
 
     # Environment management
     create_parser = sub.add_parser("env-create", help="Create a new environment")

@@ -53,6 +53,7 @@ SOURCE_PRESETS = {
 }
 
 MANAGED_SOURCE_KEYS = {"channel_priority", "channels", "default_channels", "custom_channels"}
+MANAGED_PROXY_KEYS = {"proxy_servers", "ssl_verify"}
 
 
 def _get_user_condarc_path():
@@ -457,6 +458,345 @@ def cmd_source_config_apply_preset(args):
         emit_result("source-config-apply-preset", {"ok": True, "data": source_config})
 
 
+def _read_condarc_channels():
+    """从 .condarc 读取 channels 列表"""
+    condarc_path = _get_user_condarc_path()
+    if not os.path.exists(condarc_path):
+        return []
+
+    channels = []
+    in_channels = False
+
+    with open(condarc_path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            stripped_line = raw_line.strip()
+            if not stripped_line or stripped_line.startswith("#"):
+                continue
+
+            indent = len(raw_line) - len(raw_line.lstrip(" "))
+            if indent == 0:
+                in_channels = False
+                if stripped_line == "channels:":
+                    in_channels = True
+                continue
+
+            if in_channels and stripped_line.startswith("- "):
+                channels.append(stripped_line[2:].strip())
+
+    return channels
+
+
+def _write_condarc_channels(channels):
+    """写入 channels 列表到 .condarc"""
+    condarc_path = _get_user_condarc_path()
+    existing_content = ""
+    if os.path.exists(condarc_path):
+        with open(condarc_path, "r", encoding="utf-8") as handle:
+            existing_content = handle.read()
+
+    # 移除旧的 channels 段落
+    lines = existing_content.splitlines()
+    kept_lines = []
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        stripped_line = line.lstrip()
+        indent = len(line) - len(stripped_line)
+
+        if indent == 0 and stripped_line == "channels:":
+            # 跳过整个 channels 段落
+            index += 1
+            while index < len(lines):
+                next_line = lines[index]
+                next_stripped = next_line.lstrip()
+                next_indent = len(next_line) - len(next_stripped)
+                if next_stripped == "":
+                    index += 1
+                    continue
+                if next_indent == 0:
+                    break
+                index += 1
+            continue
+
+        kept_lines.append(line)
+        index += 1
+
+    # 移除尾部空行
+    while kept_lines and kept_lines[-1].strip() == "":
+        kept_lines.pop()
+
+    # 渲染新的 channels 段落
+    channels_lines = ["channels:"]
+    for ch in channels:
+        channels_lines.append(f"  - {ch}")
+
+    merged_sections = []
+    if kept_lines:
+        merged_sections.append("\n".join(kept_lines))
+    merged_sections.append("\n".join(channels_lines))
+
+    final_content = "\n\n".join(merged_sections).rstrip() + "\n"
+    with open(condarc_path, "w", encoding="utf-8") as handle:
+        handle.write(final_content)
+
+
+def cmd_source_config_add_channel(args):
+    """添加 channel"""
+    channel = args.channel.strip()
+    if not channel:
+        emit_result("source-config-add-channel", {"ok": False, "error": "Channel name is required"})
+        return
+
+    channels = _read_condarc_channels()
+    if channel in channels:
+        emit_result("source-config-add-channel", {"ok": False, "error": f"Channel '{channel}' already exists"})
+        return
+
+    channels.append(channel)
+    try:
+        _write_condarc_channels(channels)
+    except Exception as e:
+        emit_result("source-config-add-channel", {"ok": False, "error": str(e)})
+        return
+
+    success, source_config = _get_source_config("source-config-add-channel")
+    if success:
+        emit_result("source-config-add-channel", {"ok": True, "data": source_config})
+
+
+def cmd_source_config_remove_channel(args):
+    """移除 channel"""
+    channel = args.channel.strip()
+    channels = _read_condarc_channels()
+
+    if channel not in channels:
+        emit_result("source-config-remove-channel", {"ok": False, "error": f"Channel '{channel}' not found"})
+        return
+
+    channels.remove(channel)
+    try:
+        _write_condarc_channels(channels)
+    except Exception as e:
+        emit_result("source-config-remove-channel", {"ok": False, "error": str(e)})
+        return
+
+    success, source_config = _get_source_config("source-config-remove-channel")
+    if success:
+        emit_result("source-config-remove-channel", {"ok": True, "data": source_config})
+
+
+def cmd_source_config_move_channel(args):
+    """移动 channel 位置"""
+    channel = args.channel.strip()
+    direction = args.direction.strip().lower()
+
+    channels = _read_condarc_channels()
+    if channel not in channels:
+        emit_result("source-config-move-channel", {"ok": False, "error": f"Channel '{channel}' not found"})
+        return
+
+    idx = channels.index(channel)
+    if direction == "up" and idx > 0:
+        channels[idx], channels[idx - 1] = channels[idx - 1], channels[idx]
+    elif direction == "down" and idx < len(channels) - 1:
+        channels[idx], channels[idx + 1] = channels[idx + 1], channels[idx]
+    else:
+        emit_result("source-config-move-channel", {"ok": False, "error": f"Cannot move '{channel}' {direction}"})
+        return
+
+    try:
+        _write_condarc_channels(channels)
+    except Exception as e:
+        emit_result("source-config-move-channel", {"ok": False, "error": str(e)})
+        return
+
+    success, source_config = _get_source_config("source-config-move-channel")
+    if success:
+        emit_result("source-config-move-channel", {"ok": True, "data": source_config})
+
+
+# ===== 代理配置 =====
+
+def _read_proxy_config_from_condarc():
+    """从 .condarc 读取代理配置"""
+    condarc_path = _get_user_condarc_path()
+    if not os.path.exists(condarc_path):
+        return None
+
+    config = {"http": "", "https": "", "ssl_verify": True}
+    current_section = None
+
+    with open(condarc_path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            stripped_line = raw_line.strip()
+            if not stripped_line or stripped_line.startswith("#"):
+                continue
+
+            indent = len(raw_line) - len(raw_line.lstrip(" "))
+            if indent == 0:
+                current_section = None
+                if stripped_line == "proxy_servers:":
+                    current_section = "proxy_servers"
+                elif stripped_line.startswith("ssl_verify:"):
+                    val = stripped_line.split(":", 1)[1].strip().lower()
+                    config["ssl_verify"] = val not in ("false", "0", "no")
+                continue
+
+            if current_section == "proxy_servers" and ":" in stripped_line:
+                key, value = stripped_line.split(":", 1)
+                key = key.strip().lower()
+                value = value.strip()
+                if key in ("http", "https") and value:
+                    config[key] = value
+
+    return config
+
+
+def _strip_managed_proxy_sections(raw_content):
+    """移除 .condarc 中的代理相关段落"""
+    lines = raw_content.splitlines()
+    kept_lines = []
+    index = 0
+
+    while index < len(lines):
+        line = lines[index]
+        stripped_line = line.lstrip()
+        indent = len(line) - len(stripped_line)
+
+        if indent == 0 and stripped_line and ":" in stripped_line:
+            key = stripped_line.split(":", 1)[0].strip()
+            if key in MANAGED_PROXY_KEYS:
+                index += 1
+                while index < len(lines):
+                    next_line = lines[index]
+                    next_stripped = next_line.lstrip()
+                    next_indent = len(next_line) - len(next_stripped)
+
+                    if next_stripped == "":
+                        index += 1
+                        continue
+
+                    if next_indent == 0:
+                        break
+
+                    index += 1
+                continue
+
+        kept_lines.append(line)
+        index += 1
+
+    while kept_lines and kept_lines[-1].strip() == "":
+        kept_lines.pop()
+
+    return "\n".join(kept_lines)
+
+
+def _render_proxy_yaml(config):
+    """将代理配置渲染为 YAML 片段"""
+    lines = []
+
+    has_proxy = config.get("http") or config.get("https")
+    if has_proxy:
+        lines.append("proxy_servers:")
+        if config.get("http"):
+            lines.append(f"  http: {config['http']}")
+        if config.get("https"):
+            lines.append(f"  https: {config['https']}")
+
+    ssl_verify = config.get("ssl_verify", True)
+    lines.append(f"ssl_verify: {str(ssl_verify).lower()}")
+
+    return "\n".join(lines)
+
+
+def _write_proxy_config(config):
+    """写入代理配置到 .condarc"""
+    condarc_path = _get_user_condarc_path()
+    existing_content = ""
+    if os.path.exists(condarc_path):
+        with open(condarc_path, "r", encoding="utf-8") as handle:
+            existing_content = handle.read()
+
+    preserved_content = _strip_managed_proxy_sections(existing_content)
+    rendered_proxy_content = _render_proxy_yaml(config)
+
+    merged_sections = []
+    if preserved_content.strip():
+        merged_sections.append(preserved_content.strip())
+    merged_sections.append(rendered_proxy_content)
+
+    final_content = "\n\n".join(merged_sections).rstrip() + "\n"
+    with open(condarc_path, "w", encoding="utf-8") as handle:
+        handle.write(final_content)
+
+
+def cmd_proxy_get(args):
+    """读取代理配置"""
+    config = _read_proxy_config_from_condarc()
+    if config is None:
+        config = {"http": "", "https": "", "ssl_verify": True}
+
+    # 同时从 info 中获取（作为 fallback）
+    success, info_data = run_package_manager_command_for_json(["info", "--json"], "proxy-get")
+    if success and info_data:
+        raw_proxy = info_data.get("proxy_servers", {})
+        if isinstance(raw_proxy, dict):
+            if not config["http"] and raw_proxy.get("http"):
+                config["http"] = str(raw_proxy["http"])
+            if not config["https"] and raw_proxy.get("https"):
+                config["https"] = str(raw_proxy["https"])
+
+        if config["ssl_verify"] is True:
+            raw_ssl = info_data.get("ssl_verify")
+            if raw_ssl is not None:
+                config["ssl_verify"] = str(raw_ssl).lower() not in ("false", "0", "no")
+
+    emit_result("proxy-get", {"ok": True, "data": config})
+
+
+def cmd_proxy_set(args):
+    """设置代理配置"""
+    config = {
+        "http": getattr(args, "http", "") or "",
+        "https": getattr(args, "https", "") or "",
+        "ssl_verify": True,
+    }
+
+    # 读取当前 ssl_verify 设置
+    current = _read_proxy_config_from_condarc()
+    if current and hasattr(args, "ssl_verify") and args.ssl_verify is not None:
+        config["ssl_verify"] = str(args.ssl_verify).lower() not in ("false", "0", "no")
+    elif current:
+        config["ssl_verify"] = current.get("ssl_verify", True)
+
+    try:
+        _write_proxy_config(config)
+    except Exception as e:
+        emit_result("proxy-set", {"ok": False, "error": str(e) or "Failed to update proxy config"})
+        return
+
+    # 读回确认
+    updated = _read_proxy_config_from_condarc()
+    emit_result("proxy-set", {"ok": True, "data": updated or config})
+
+
+def cmd_proxy_clear(args):
+    """清除代理配置"""
+    config = {"http": "", "https": "", "ssl_verify": True}
+
+    if hasattr(args, "ssl_verify") and args.ssl_verify is not None:
+        config["ssl_verify"] = str(args.ssl_verify).lower() not in ("false", "0", "no")
+
+    try:
+        _write_proxy_config(config)
+    except Exception as e:
+        emit_result("proxy-clear", {"ok": False, "error": str(e) or "Failed to clear proxy config"})
+        return
+
+    emit_result("proxy-clear", {"ok": True, "data": config})
+
+
 def cmd_env_list(args):
     success, data = run_package_manager_command_for_json(["env", "list", "--json"], "env-list")
     if not success:
@@ -556,6 +896,82 @@ def cmd_pkg_install(args):
 
 def cmd_pkg_remove(args):
     stream_package_manager_command(["remove", "--prefix", args.prefix, args.name, "--yes"], "pkg-remove")
+
+
+def cmd_pkg_upgrade(args):
+    stream_package_manager_command(["update", "--prefix", args.prefix, args.name, "--yes"], "pkg-upgrade")
+
+
+def cmd_pkg_upgrade_all(args):
+    stream_package_manager_command(["update", "--prefix", args.prefix, "--all", "--yes"], "pkg-upgrade-all")
+
+
+def cmd_pkg_search(args):
+    """搜索远程包"""
+    query = args.query.strip()
+    if not query:
+        emit_result("pkg-search", {"ok": False, "error": "Search query is required"})
+        return
+
+    package_manager_path = get_package_manager_path()
+    if not package_manager_path:
+        emit_result("pkg-search", {"ok": False, "error": "package manager init failed: executable not found"})
+        return
+
+    # 使用 --json 获取结构化结果
+    full_command = [package_manager_path, "search", query, "--json"]
+    try:
+        proc = subprocess.run(
+            full_command,
+            capture_output=True, text=True, check=True,
+            encoding="utf-8", timeout=30,
+            **get_hidden_subprocess_kwargs(),
+        )
+        raw_data = json.loads(proc.stdout)
+
+        # 归一化搜索结果
+        results = []
+        if isinstance(raw_data, list):
+            for item in raw_data:
+                if isinstance(item, dict):
+                    name = item.get("name", "")
+                    version = item.get("version", "")
+                    build = item.get("build_string", item.get("build", ""))
+                    channel = item.get("channel", item.get("subdir", ""))
+                    if name:
+                        results.append({
+                            "name": str(name),
+                            "version": str(version),
+                            "build": str(build),
+                            "channel": str(channel),
+                        })
+        elif isinstance(raw_data, dict):
+            # micromamba search 返回 { result: { pkgs: [...] } }
+            pkgs = raw_data.get("result", {}).get("pkgs", [])
+            if isinstance(pkgs, list):
+                for item in pkgs:
+                    if isinstance(item, dict):
+                        name = item.get("name", "")
+                        version = item.get("version", "")
+                        build = item.get("build_string", item.get("build", ""))
+                        channel = item.get("channel", "")
+                        if name:
+                            results.append({
+                                "name": str(name),
+                                "version": str(version),
+                                "build": str(build),
+                                "channel": str(channel),
+                            })
+
+        emit_result("pkg-search", {"ok": True, "data": results})
+    except subprocess.TimeoutExpired:
+        emit_result("pkg-search", {"ok": False, "error": "Search timed out (30s)"})
+    except Exception as e:
+        error_message = str(e)
+        if isinstance(e, subprocess.CalledProcessError):
+            error_message = e.stderr.strip() or e.stdout.strip()
+        log(f"Error during 'pkg-search': {error_message}", stream="stderr")
+        emit_result("pkg-search", {"ok": False, "error": error_message})
 
 
 def cmd_env_create(args):

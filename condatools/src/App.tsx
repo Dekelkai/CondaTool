@@ -6,6 +6,8 @@ import { ExportModal } from "./ExportModal";
 import { InputModal } from "./InputModal";
 import { DiagnosticsModal } from "./DiagnosticsModal";
 import { SourceConfigModal } from "./SourceConfigModal";
+import { ProxyConfigModal } from "./ProxyConfigModal";
+import { PackageSearchModal } from "./PackageSearchModal";
 import { FeatureGuideModal } from "./FeatureGuideModal";
 import { CondaMissingModal } from "./CondaMissingModal";
 import { i18n, type Locale } from "./i18n";
@@ -40,6 +42,12 @@ interface SourceConfigInfo {
   channel_priority: string;
   config_file: string;
   available_presets: string[];
+}
+
+interface ProxyConfig {
+  http: string;
+  https: string;
+  ssl_verify: boolean;
 }
 
 interface Environment {
@@ -116,6 +124,11 @@ function App() {
   const [showSourceConfig, setShowSourceConfig] = useState(false);
   const [sourceConfigInfo, setSourceConfigInfo] = useState<SourceConfigInfo | null>(null);
   const [selectedSourcePreset, setSelectedSourcePreset] = useState("tuna");
+  const [showProxyConfig, setShowProxyConfig] = useState(false);
+  const [proxyConfig, setProxyConfig] = useState<ProxyConfig | null>(null);
+  const [showPackageSearch, setShowPackageSearch] = useState(false);
+  const [packageSearchResults, setPackageSearchResults] = useState<{ name: string; version: string; build: string; channel: string }[] | null>(null);
+  const [packageSearchLoading, setPackageSearchLoading] = useState(false);
 
   // InputModal 状态
   interface InputModalConfig {
@@ -388,6 +401,30 @@ function App() {
             } else {
               handleCommandError(result.error);
             }
+          } else if (["source-config-add-channel", "source-config-remove-channel", "source-config-move-channel"].includes(cmd)) {
+            if (result.ok) {
+              setSourceConfigInfo(result.data);
+            } else {
+              handleCommandError(result.error);
+            }
+          } else if (cmd === "proxy-get") {
+            if (result.ok) {
+              setProxyConfig(result.data);
+            } else {
+              handleCommandError(result.error);
+            }
+          } else if (cmd === "proxy-set") {
+            if (result.ok) {
+              setProxyConfig(result.data);
+            } else {
+              handleCommandError(result.error);
+            }
+          } else if (cmd === "proxy-clear") {
+            if (result.ok) {
+              setProxyConfig(result.data);
+            } else {
+              handleCommandError(result.error);
+            }
           } else if (["env-create", "env-remove", "env-rename", "env-import", "env-clone"].includes(cmd)) {
             if (result.ok) {
               if (activeCommandRef.current?.clearSelectedEnvOnSuccess) {
@@ -405,7 +442,7 @@ function App() {
             } else {
               handleCommandError(result.error);
             }
-          } else if (["pkg-install", "pkg-remove"].includes(cmd)) {
+          } else if (["pkg-install", "pkg-remove", "pkg-upgrade", "pkg-upgrade-all"].includes(cmd)) {
             const requestedEnvPath = activeCommandRef.current?.envPath;
             if (result.ok) {
               queueLog(`--- Package operation successful. Refreshing packages... ---`);
@@ -414,6 +451,14 @@ function App() {
               }
             } else {
               handleCommandError(result.error);
+            }
+          } else if (cmd === "pkg-search") {
+            setPackageSearchLoading(false);
+            if (result.ok) {
+              setPackageSearchResults(result.data);
+            } else {
+              handleCommandError(result.error);
+              setPackageSearchResults([]);
             }
           } else if (cmd === "env-export") {
             if (result.ok) {
@@ -645,6 +690,28 @@ function App() {
     });
   };
 
+  const handleUpgradePackage = async (pkg: Package) => {
+    if (running || !selectedEnvPath) return;
+    const confirmed = await confirm(t.packageUpgradeConfirm(pkg.name), { title: t.packageUpgradeConfirmTitle });
+    if (!confirmed) return;
+
+    void runCommand("pkg-upgrade", ["--prefix", selectedEnvPath, "--name", pkg.name], {
+      command: "pkg-upgrade",
+      envPath: selectedEnvPath,
+    });
+  };
+
+  const handleUpgradeAllPackages = async () => {
+    if (running || !selectedEnvPath) return;
+    const confirmed = await confirm(t.packageUpgradeAllConfirm, { title: t.packageUpgradeAllConfirmTitle });
+    if (!confirmed) return;
+
+    void runCommand("pkg-upgrade-all", ["--prefix", selectedEnvPath], {
+      command: "pkg-upgrade-all",
+      envPath: selectedEnvPath,
+    });
+  };
+
   const handleOpenDiagnostics = async () => {
     setShowDiagnostics(true);
     if (running) return;
@@ -663,6 +730,62 @@ function App() {
     if (!success) {
       await message(t.sourceConfigApplyFailed);
     }
+  };
+
+  const handleAddChannel = async (channel: string) => {
+    if (running) return;
+    await runCommand("source-config-add-channel", ["--channel", channel]);
+  };
+
+  const handleRemoveChannel = async (channel: string) => {
+    if (running) return;
+    await runCommand("source-config-remove-channel", ["--channel", channel]);
+  };
+
+  const handleMoveChannel = async (channel: string, direction: "up" | "down") => {
+    if (running) return;
+    await runCommand("source-config-move-channel", ["--channel", channel, "--direction", direction]);
+  };
+
+  const handleOpenProxyConfig = async () => {
+    setShowProxyConfig(true);
+    if (running) return;
+    await runCommand("proxy-get");
+  };
+
+  const handleSaveProxy = async (config: ProxyConfig) => {
+    if (running) return;
+    const args = ["--http", config.http, "--https", config.https, "--ssl-verify", String(config.ssl_verify)];
+    const success = await runCommand("proxy-set", args);
+    if (success) {
+      queueLog(t.proxyConfigSaveSuccess);
+    } else {
+      await message(t.proxyConfigSaveFailed);
+    }
+  };
+
+  const handleClearProxy = async () => {
+    if (running) return;
+    const success = await runCommand("proxy-clear", ["--ssl-verify", "true"]);
+    if (success) {
+      queueLog(t.proxyConfigClearSuccess);
+    }
+  };
+
+  const handleSearchPackage = async (query: string) => {
+    if (running) return;
+    setPackageSearchLoading(true);
+    setPackageSearchResults(null);
+    await runCommand("pkg-search", ["--query", query]);
+  };
+
+  const handleInstallFromSearch = (pkg: { name: string; version: string }) => {
+    if (running || !selectedEnvPath) return;
+    setShowPackageSearch(false);
+    void runCommand("pkg-install", ["--prefix", selectedEnvPath, "--name", pkg.name, "--version", pkg.version], {
+      command: "pkg-install",
+      envPath: selectedEnvPath,
+    });
   };
 
   const handleCopyDiagnostics = () => {
@@ -778,7 +901,34 @@ function App() {
           onPresetChange={setSelectedSourcePreset}
           onRefresh={() => void runCommand("source-config-get")}
           onApply={() => void handleApplySourcePreset()}
+          onAddChannel={(channel) => void handleAddChannel(channel)}
+          onRemoveChannel={(channel) => void handleRemoveChannel(channel)}
+          onMoveChannel={(channel, dir) => void handleMoveChannel(channel, dir)}
           onClose={() => setShowSourceConfig(false)}
+        />
+      )}
+
+      {showProxyConfig && (
+        <ProxyConfigModal
+          t={t}
+          proxyConfig={proxyConfig}
+          running={running}
+          onRefresh={() => void runCommand("proxy-get")}
+          onSave={(config) => void handleSaveProxy(config)}
+          onClear={() => void handleClearProxy()}
+          onClose={() => setShowProxyConfig(false)}
+        />
+      )}
+
+      {showPackageSearch && (
+        <PackageSearchModal
+          t={t}
+          running={running}
+          onSearch={(query) => void handleSearchPackage(query)}
+          onInstall={handleInstallFromSearch}
+          onClose={() => { setShowPackageSearch(false); setPackageSearchResults(null); setPackageSearchLoading(false); }}
+          searchResults={packageSearchResults}
+          searchLoading={packageSearchLoading}
         />
       )}
 
@@ -825,6 +975,7 @@ function App() {
             </div>
             <button className="btn btn-secondary" onClick={() => handleLoadEnvs(true)} disabled={!!running}>{t.refreshEnv}</button>
             <button className="btn btn-secondary" onClick={() => void handleOpenSourceConfig()}>{t.sourceConfig}</button>
+            <button className="btn btn-secondary" onClick={() => void handleOpenProxyConfig()}>{t.proxyConfig}</button>
             <button className="btn btn-secondary" onClick={() => void handleOpenDiagnostics()}>{t.diagnostics}</button>
             <button className="btn btn-secondary" onClick={() => setShowFeatureGuide(true)}>{t.featureGuide}</button>
             <button className="btn btn-secondary" onClick={handleImportEnv} disabled={!!running}>{t.importEnv}</button>
@@ -902,6 +1053,12 @@ function App() {
                 <button className="btn btn-primary" onClick={() => void handleInstallPackage()} disabled={!selectedEnvPath || !!running}>
                   {t.packageInstall}
                 </button>
+                <button className="btn btn-secondary" onClick={() => void handleUpgradeAllPackages()} disabled={!selectedEnvPath || !!running}>
+                  {t.packageUpgradeAll}
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowPackageSearch(true)}>
+                  {t.packageSearch}
+                </button>
               </div>
               <input
                 type="search"
@@ -925,6 +1082,7 @@ function App() {
                       <th>{t.name}</th>
                       <th>{t.version}</th>
                       <th>{t.channel}</th>
+                      <th>{t.packageUpgrade}</th>
                       <th>{t.remove}</th>
                     </tr>
                   </thead>
@@ -934,6 +1092,11 @@ function App() {
                         <td>{pkg.name}</td>
                         <td>{pkg.version}</td>
                         <td>{pkg.channel || "-"}</td>
+                        <td>
+                          <button className="btn btn-ghost" onClick={() => void handleUpgradePackage(pkg)} disabled={!!running}>
+                            {t.packageUpgrade}
+                          </button>
+                        </td>
                         <td>
                           <button className="btn btn-ghost" onClick={() => void handleRemovePackage(pkg)} disabled={!!running}>
                             {t.packageRemove}
