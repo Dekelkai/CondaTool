@@ -546,6 +546,18 @@ def cmd_pkg_list(args):
         emit_result("pkg-list", {"ok": True, "data": data})
 
 
+def cmd_pkg_install(args):
+    package_spec = args.name
+    if args.version:
+        package_spec = f"{args.name}={args.version}"
+
+    stream_package_manager_command(["install", "--prefix", args.prefix, package_spec, "--yes"], "pkg-install")
+
+
+def cmd_pkg_remove(args):
+    stream_package_manager_command(["remove", "--prefix", args.prefix, args.name, "--yes"], "pkg-remove")
+
+
 def cmd_env_create(args):
     stream_package_manager_command(["create", "--name", args.name, f"python={args.python}", "--yes"], "env-create")
 

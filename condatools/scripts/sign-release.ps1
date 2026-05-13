@@ -71,10 +71,18 @@ function Get-DefaultFiles {
   }
 
   if ($IncludeBundles) {
+    # 从 tauri.conf.json 动态读取版本号
+    $tauriConfPath = Join-Path $ProjectRoot "src-tauri\tauri.conf.json"
+    $version = "0.0.0"
+    if (Test-Path $tauriConfPath) {
+      $tauriConf = Get-Content $tauriConfPath -Raw | ConvertFrom-Json
+      $version = $tauriConf.version
+    }
+
     $targets += @(
       (Join-Path $ProjectRoot "src-tauri\target\release\condatools.exe"),
-      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\msi\CondaTool_0.2.2_x64_en-US.msi"),
-      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis\CondaTool_0.2.2_x64-setup.exe")
+      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\msi\CondaTool_${version}_x64_en-US.msi"),
+      (Join-Path $ProjectRoot "src-tauri\target\release\bundle\nsis\CondaTool_${version}_x64-setup.exe")
     )
   }
 

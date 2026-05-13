@@ -1,9 +1,15 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { confirm, save, open, message } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ExportModal } from "./ExportModal";
+import { InputModal } from "./InputModal";
+import { DiagnosticsModal } from "./DiagnosticsModal";
+import { SourceConfigModal } from "./SourceConfigModal";
+import { FeatureGuideModal } from "./FeatureGuideModal";
+import { CondaMissingModal } from "./CondaMissingModal";
+import { i18n, type Locale } from "./i18n";
+import { useCommandRunner } from "./hooks/useCommandRunner";
 import "./App.css";
 
 interface CondaInfo {
@@ -56,220 +62,10 @@ interface CommandMeta {
 }
 
 type ThemeMode = "light" | "dark" | "system";
-type Locale = "zh" | "en";
 
 const MAX_LOG_LINES = 600;
 const LOG_FLUSH_DELAY_MS = 48;
 const LOG_BATCH_SIZE = 20;
-
-const i18n = {
-  zh: {
-    appSubtitle: "Conda 环境桌面管理器",
-    themeLight: "浅色",
-    themeDark: "深色",
-    themeSystem: "跟随系统",
-    refreshEnv: "刷新环境",
-    featureGuide: "功能说明",
-    diagnostics: "诊断",
-    sourceConfig: "源配置",
-    importEnv: "导入环境",
-    createEnv: "新建环境",
-    running: "执行中",
-    simulated: "模拟模式: 包管理器不可用",
-    errorPrefix: "错误",
-    panelEnv: "环境",
-    loadingEnvs: "正在加载环境...",
-    noEnvs: "暂无环境，点击顶部“刷新环境”。",
-    clone: "克隆",
-    export: "导出",
-    rename: "重命名",
-    remove: "删除",
-    panelPkg: "包列表",
-    noSelectedEnv: "未选择环境",
-    searchPkg: "搜索包名...",
-    selectEnvHint: "请先在左侧选择一个环境。",
-    loadingPkgs: "正在加载包列表...",
-    noMatchedPkg: "没有匹配的包。",
-    name: "名称",
-    version: "版本",
-    channel: "渠道",
-    panelLog: "日志",
-    clear: "清空",
-    startupProbe: "应用启动，正在检查内置运行时...",
-    condaMissingTitle: "内置运行时缺失",
-    condaMissingDesc1: "CondaTool 依赖内置运行时（backend.exe 与 micromamba.exe）。当前未检测到完整运行时文件。",
-    condaMissingDesc2: "请重新安装应用，或在安装目录中检查 runtime 文件是否被杀毒软件隔离。",
-    installConda: "查看文档（运行时说明）",
-    installMiniconda: "查看 micromamba 文档",
-    understood: "我已了解",
-    featureTitle: "CondaTool 功能说明",
-    featureDesc: "CondaTool 面向需要可视化管理 Conda 环境的开发者与数据工作者，核心目标是减少命令行操作成本，提升环境管理效率。",
-    featureItem1: "检查内置运行时（backend.exe 与 micromamba.exe）并加载环境状态。",
-    featureItem2: "图形化管理环境：创建、删除、克隆、重命名。",
-    featureItem3: "查看并搜索指定环境下的已安装包与版本信息。",
-    featureItem4: "支持环境导入/导出（`yml` / `txt`），便于共享与复现。",
-    featureItem5: "支持查看诊断信息与源配置，便于定位环境和镜像问题。",
-    featureFlow: "推荐流程：先刷新环境列表，必要时查看诊断与源配置，再选择目标环境查看包信息或进行创建/克隆/导入导出等操作。",
-    closeGuide: "关闭说明",
-    diagnosticsTitle: "诊断信息",
-    diagnosticsLoading: "正在收集诊断信息...",
-    diagnosticsRefresh: "刷新诊断",
-    diagnosticsClose: "关闭诊断",
-    diagnosticsPackageManager: "包管理器",
-    diagnosticsPackageManagerPath: "执行路径",
-    diagnosticsRootPrefix: "根环境路径",
-    diagnosticsActiveEnv: "当前活动环境",
-    diagnosticsCondaVersion: "Conda 版本",
-    diagnosticsPythonVersion: "Python 版本",
-    diagnosticsConfigFiles: "配置文件",
-    diagnosticsChannels: "当前渠道",
-    diagnosticsProxy: "代理配置",
-    diagnosticsSslVerify: "SSL 校验",
-    diagnosticsEnvDirs: "环境目录",
-    diagnosticsPkgCaches: "包缓存目录",
-    diagnosticsNone: "未配置",
-    sourceConfigTitle: "源配置",
-    sourceConfigLoading: "正在读取源配置...",
-    sourceConfigRefresh: "刷新源配置",
-    sourceConfigClose: "关闭源配置",
-    sourceConfigPreset: "预设模板",
-    sourceConfigApply: "应用模板",
-    sourceConfigCurrentFile: "配置文件",
-    sourceConfigChannels: "Channels",
-    sourceConfigDefaultChannels: "Default Channels",
-    sourceConfigCustomChannels: "Custom Channels",
-    sourceConfigPriority: "Channel Priority",
-    sourceConfigDefaultsLabel: "官方默认源",
-    sourceConfigTunaLabel: "清华镜像",
-    sourceConfigApplySuccess: (preset: string) => `已应用源配置模板：${preset}`,
-    sourceConfigApplyFailed: "源配置应用失败",
-    createPrompt: "请输入新环境名称:",
-    createFailTitle: "创建失败",
-    nameExists: (name: string) => `环境 \"${name}\" 已存在，请使用其他名称。`,
-    pythonPrompt: "请输入 Python 版本 (例如 3.10):",
-    removeConfirmTitle: "删除确认",
-    removeConfirm: (name: string) => `确认删除环境 \"${name}\" ?\n该操作不可恢复。`,
-    renamePrompt: (oldName: string) => `请输入环境 \"${oldName}\" 的新名称:`,
-    renameFailTitle: "重命名失败",
-    clonePrompt: (sourceName: string) => `请输入克隆环境 \"${sourceName}\" 的新名称:`,
-    cloneFailTitle: "克隆失败",
-    cloneNameSame: "新环境名称不能与源环境相同。",
-    exportTitle: (format: string) => `导出环境为 ${format}`,
-    importTitle: "从文件导入环境",
-    importPrompt: "请输入导入后新环境名称:",
-    importFailTitle: "导入失败",
-    envFile: "环境文件",
-    cannotOpenLink: "无法打开链接",
-    runtimeMissingError: "runtime missing: required runtime files are not available.",
-    backendStartupError: "backend startup failed: unable to launch backend runtime.",
-    packageManagerInitError: "package manager init failed: package manager runtime is unavailable.",
-    themeAria: "主题切换",
-    langAria: "语言切换",
-  },
-  en: {
-    appSubtitle: "Desktop Conda Environment Manager",
-    themeLight: "Light",
-    themeDark: "Dark",
-    themeSystem: "System",
-    refreshEnv: "Refresh Environments",
-    featureGuide: "Feature Guide",
-    diagnostics: "Diagnostics",
-    sourceConfig: "Sources",
-    importEnv: "Import",
-    createEnv: "New Environment",
-    running: "Running",
-    simulated: "Simulation Mode: Package manager unavailable",
-    errorPrefix: "Error",
-    panelEnv: "Environments",
-    loadingEnvs: "Loading environments...",
-    noEnvs: "No environments. Click \"Refresh Environments\".",
-    clone: "Clone",
-    export: "Export",
-    rename: "Rename",
-    remove: "Delete",
-    panelPkg: "Packages",
-    noSelectedEnv: "No environment selected",
-    searchPkg: "Search package...",
-    selectEnvHint: "Select an environment from the left panel first.",
-    loadingPkgs: "Loading packages...",
-    noMatchedPkg: "No matched packages.",
-    name: "Name",
-    version: "Version",
-    channel: "Channel",
-    panelLog: "Logs",
-    clear: "Clear",
-    startupProbe: "App started. Checking bundled runtime...",
-    condaMissingTitle: "Bundled Runtime Missing",
-    condaMissingDesc1: "CondaTool relies on bundled runtime files (backend.exe and micromamba.exe). Required files are missing or inaccessible.",
-    condaMissingDesc2: "Reinstall the app or check whether security software quarantined runtime binaries.",
-    installConda: "Open docs (runtime)",
-    installMiniconda: "Open micromamba docs",
-    understood: "Got it",
-    featureTitle: "CondaTool Feature Guide",
-    featureDesc: "CondaTool is designed for developers and data professionals who need visual management for Conda environments, reducing command-line overhead and improving efficiency.",
-    featureItem1: "Check bundled runtime files (backend.exe and micromamba.exe) and load environment state.",
-    featureItem2: "Manage environments visually: create, delete, clone, and rename.",
-    featureItem3: "View and search installed packages and versions in any selected environment.",
-    featureItem4: "Import/export environments (`yml` / `txt`) for sharing and reproducibility.",
-    featureItem5: "Review diagnostics and source configuration to troubleshoot environment and mirror issues.",
-    featureFlow: "Recommended flow: refresh environments first, review diagnostics or sources if needed, then inspect packages or perform create/clone/import/export actions.",
-    closeGuide: "Close",
-    diagnosticsTitle: "Diagnostics",
-    diagnosticsLoading: "Collecting diagnostics...",
-    diagnosticsRefresh: "Refresh Diagnostics",
-    diagnosticsClose: "Close Diagnostics",
-    diagnosticsPackageManager: "Package Manager",
-    diagnosticsPackageManagerPath: "Executable Path",
-    diagnosticsRootPrefix: "Root Prefix",
-    diagnosticsActiveEnv: "Active Environment",
-    diagnosticsCondaVersion: "Conda Version",
-    diagnosticsPythonVersion: "Python Version",
-    diagnosticsConfigFiles: "Config Files",
-    diagnosticsChannels: "Channels",
-    diagnosticsProxy: "Proxy Settings",
-    diagnosticsSslVerify: "SSL Verify",
-    diagnosticsEnvDirs: "Environment Directories",
-    diagnosticsPkgCaches: "Package Cache Directories",
-    diagnosticsNone: "Not configured",
-    sourceConfigTitle: "Source Configuration",
-    sourceConfigLoading: "Loading source configuration...",
-    sourceConfigRefresh: "Refresh Sources",
-    sourceConfigClose: "Close Sources",
-    sourceConfigPreset: "Preset",
-    sourceConfigApply: "Apply Preset",
-    sourceConfigCurrentFile: "Config File",
-    sourceConfigChannels: "Channels",
-    sourceConfigDefaultChannels: "Default Channels",
-    sourceConfigCustomChannels: "Custom Channels",
-    sourceConfigPriority: "Channel Priority",
-    sourceConfigDefaultsLabel: "Official Defaults",
-    sourceConfigTunaLabel: "TUNA Mirror",
-    sourceConfigApplySuccess: (preset: string) => `Applied source preset: ${preset}`,
-    sourceConfigApplyFailed: "Failed to apply source preset",
-    createPrompt: "Enter new environment name:",
-    createFailTitle: "Create Failed",
-    nameExists: (name: string) => `Environment \"${name}\" already exists. Please choose another name.`,
-    pythonPrompt: "Enter Python version (for example 3.10):",
-    removeConfirmTitle: "Delete Confirmation",
-    removeConfirm: (name: string) => `Delete environment \"${name}\"?\nThis action cannot be undone.`,
-    renamePrompt: (oldName: string) => `Enter a new name for \"${oldName}\":`,
-    renameFailTitle: "Rename Failed",
-    clonePrompt: (sourceName: string) => `Enter a new name for cloned env \"${sourceName}\":`,
-    cloneFailTitle: "Clone Failed",
-    cloneNameSame: "New name cannot be the same as source environment.",
-    exportTitle: (format: string) => `Export Environment as ${format}`,
-    importTitle: "Import Environment from File",
-    importPrompt: "Enter the imported environment name:",
-    importFailTitle: "Import Failed",
-    envFile: "Environment File",
-    cannotOpenLink: "Cannot open link",
-    runtimeMissingError: "runtime missing: required runtime files are not available.",
-    backendStartupError: "backend startup failed: unable to launch backend runtime.",
-    packageManagerInitError: "package manager init failed: package manager runtime is unavailable.",
-    themeAria: "Theme switch",
-    langAria: "Language switch",
-  },
-} as const;
 
 const CloneIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -320,6 +116,18 @@ function App() {
   const [showSourceConfig, setShowSourceConfig] = useState(false);
   const [sourceConfigInfo, setSourceConfigInfo] = useState<SourceConfigInfo | null>(null);
   const [selectedSourcePreset, setSelectedSourcePreset] = useState("tuna");
+
+  // InputModal 状态
+  interface InputModalConfig {
+    title: string;
+    fields: { label: string; placeholder?: string; defaultValue?: string; optional?: boolean }[];
+    confirmLabel: string;
+    cancelLabel: string;
+    onConfirm: (values: string[]) => void;
+    validate?: (values: string[]) => string | null;
+  }
+  const [inputModal, setInputModal] = useState<InputModalConfig | null>(null);
+
   const [locale, setLocale] = useState<Locale>(() => {
     const saved = localStorage.getItem("condatool-locale");
     return saved === "en" || saved === "zh" ? saved : "zh";
@@ -337,7 +145,6 @@ function App() {
   const logContainerRef = useRef<HTMLDivElement>(null);
   const localeRef = useRef<Locale>(locale);
   const selectedEnvPathRef = useRef<string | null>(selectedEnvPath);
-  const commandQueueRef = useRef<Promise<void>>(Promise.resolve());
   const activeCommandRef = useRef<CommandMeta | null>(null);
   const activeCommandResultRef = useRef<boolean | null>(null);
   const activeCommandDoneRef = useRef<((ok: boolean) => void) | null>(null);
@@ -398,7 +205,12 @@ function App() {
   };
 
   const queueLog = (line: string) => {
-    pendingLogsRef.current.push(line);
+    // 给普通日志行添加时间戳（不给分隔行和错误前缀加）
+    const shouldTimestamp = !line.startsWith("---") && !line.startsWith("\n---") && !line.startsWith("[ERR]") && !line.startsWith("[SIMULATED]");
+    const timestampedLine = shouldTimestamp
+      ? `[${new Date().toLocaleTimeString()}] ${line}`
+      : line;
+    pendingLogsRef.current.push(timestampedLine);
 
     if (pendingLogsRef.current.length >= LOG_BATCH_SIZE) {
       flushLogs();
@@ -420,6 +232,17 @@ function App() {
     }
     setLogs([]);
   };
+
+  const { runCommand } = useCommandRunner<CommandMeta>({
+    isForceNoRuntime,
+    queueLog,
+    handleCommandError,
+    clearError: () => setError(null),
+    setRunning,
+    activeCommandRef,
+    activeCommandResultRef,
+    activeCommandDoneRef,
+  });
 
   const openExternalLink = async (url: string) => {
     try {
@@ -506,45 +329,6 @@ function App() {
     }
   };
 
-  const runCommand = async (command: string, extraArgs: string[] = [], meta?: Partial<CommandMeta>) => {
-    const finalArgs = [command, ...extraArgs].filter((arg) => arg !== "");
-    const commandForLog = finalArgs.join(" ");
-
-    const execute = async () => {
-      setRunning(commandForLog);
-      queueLog(`\n--- Starting command: ${commandForLog} ---`);
-      setError(null);
-      activeCommandRef.current = { command, ...meta };
-      activeCommandResultRef.current = null;
-
-      if (isForceNoRuntime) {
-        queueLog(`[SIMULATED] VITE_FORCE_RUNTIME_MISSING is enabled, skip command: ${commandForLog}`);
-        handleCommandError("package manager init failed: executable not found");
-        return false;
-      }
-
-      try {
-        const completed = new Promise<boolean>((resolve) => {
-          activeCommandDoneRef.current = resolve;
-        });
-        await invoke("run_backend", { args: finalArgs });
-        return await completed;
-      } catch (e: any) {
-        handleCommandError(String(e));
-        return false;
-      } finally {
-        activeCommandRef.current = null;
-        activeCommandResultRef.current = null;
-        activeCommandDoneRef.current = null;
-        setRunning(null);
-      }
-    };
-
-    const queued = commandQueueRef.current.then(execute, execute);
-    commandQueueRef.current = queued.then(() => undefined, () => undefined);
-    return queued;
-  };
-
   useEffect(() => {
     if (subscribed.current) return;
     subscribed.current = true;
@@ -561,6 +345,8 @@ function App() {
             if (result.ok) {
               setCondaInfo(result.data);
               setShowCondaInstallGuide(false);
+              // probe 成功后自动加载环境列表
+              void runCommand("env-list");
             } else {
               handleCommandError(result.error);
             }
@@ -619,6 +405,16 @@ function App() {
             } else {
               handleCommandError(result.error);
             }
+          } else if (["pkg-install", "pkg-remove"].includes(cmd)) {
+            const requestedEnvPath = activeCommandRef.current?.envPath;
+            if (result.ok) {
+              queueLog(`--- Package operation successful. Refreshing packages... ---`);
+              if (requestedEnvPath && requestedEnvPath === selectedEnvPathRef.current) {
+                void runCommand("pkg-list", ["--prefix", requestedEnvPath], { command: "pkg-list", envPath: requestedEnvPath });
+              }
+            } else {
+              handleCommandError(result.error);
+            }
           } else if (cmd === "env-export") {
             if (result.ok) {
               queueLog("--- Environment exported successfully. ---");
@@ -672,21 +468,25 @@ function App() {
     return environments.some((env) => getEnvName(env.path).toLowerCase() === name.toLowerCase());
   };
 
-  const handleCreateEnv = async () => {
+  const handleCreateEnv = () => {
     if (running) return;
-    const name = prompt(t.createPrompt, "my-new-env");
-    if (!name || !name.trim()) return;
-    const trimmedName = name.trim();
-
-    if (isEnvNameExists(trimmedName)) {
-      await message(t.nameExists(trimmedName), { title: t.createFailTitle });
-      return;
-    }
-
-    const pythonVersion = prompt(t.pythonPrompt, "3.10");
-    if (!pythonVersion || !pythonVersion.trim()) return;
-
-    void runCommand("env-create", ["--name", trimmedName, "--python", pythonVersion.trim()]);
+    setInputModal({
+      title: t.createEnv,
+      fields: [
+        { label: t.createPrompt, placeholder: "my-new-env", defaultValue: "my-new-env" },
+        { label: t.pythonPrompt, placeholder: "3.10", defaultValue: "3.10" },
+      ],
+      confirmLabel: t.createEnv,
+      cancelLabel: t.closeGuide,
+      validate: ([name]) => {
+        if (isEnvNameExists(name)) return t.nameExists(name);
+        return null;
+      },
+      onConfirm: ([name, pythonVersion]) => {
+        setInputModal(null);
+        void runCommand("env-create", ["--name", name, "--python", pythonVersion]);
+      },
+    });
   };
 
   const handleEnvSelect = (env: Environment) => {
@@ -710,45 +510,53 @@ function App() {
     });
   };
 
-  const handleRenameEnv = async (env: Environment) => {
+  const handleRenameEnv = (env: Environment) => {
     if (running) return;
     const oldName = getEnvName(env.path);
-    const newName = prompt(t.renamePrompt(oldName), oldName);
-    if (!newName || !newName.trim()) return;
-
-    const trimmedName = newName.trim();
-    if (trimmedName.toLowerCase() === oldName.toLowerCase()) return;
-
-    if (isEnvNameExists(trimmedName)) {
-      await message(t.nameExists(trimmedName), { title: t.renameFailTitle });
-      return;
-    }
-
-    void runCommand("env-rename", ["--old-prefix", env.path, "--new-name", trimmedName], {
-      command: "env-rename",
-      envPath: env.path,
-      nextSelectedEnvName: selectedEnvPath === env.path ? trimmedName : undefined,
+    setInputModal({
+      title: t.rename,
+      fields: [
+        { label: t.renamePrompt(oldName), defaultValue: oldName },
+      ],
+      confirmLabel: t.rename,
+      cancelLabel: t.closeGuide,
+      validate: ([newName]) => {
+        if (newName.toLowerCase() === oldName.toLowerCase()) return null; // 无变化，静默关闭
+        if (isEnvNameExists(newName)) return t.nameExists(newName);
+        return null;
+      },
+      onConfirm: ([newName]) => {
+        setInputModal(null);
+        if (newName.toLowerCase() === oldName.toLowerCase()) return;
+        void runCommand("env-rename", ["--old-prefix", env.path, "--new-name", newName], {
+          command: "env-rename",
+          envPath: env.path,
+          nextSelectedEnvName: selectedEnvPath === env.path ? newName : undefined,
+        });
+      },
     });
   };
 
-  const handleCloneEnv = async (env: Environment) => {
+  const handleCloneEnv = (env: Environment) => {
     if (running) return;
     const sourceName = getEnvName(env.path);
-    const destName = prompt(t.clonePrompt(sourceName), `${sourceName}-clone`);
-    if (!destName || !destName.trim()) return;
-
-    const trimmedName = destName.trim();
-    if (trimmedName.toLowerCase() === sourceName.toLowerCase()) {
-      await message(t.cloneNameSame, { title: t.cloneFailTitle });
-      return;
-    }
-
-    if (isEnvNameExists(trimmedName)) {
-      await message(t.nameExists(trimmedName), { title: t.cloneFailTitle });
-      return;
-    }
-
-    void runCommand("env-clone", ["--source-prefix", env.path, "--dest-name", trimmedName]);
+    setInputModal({
+      title: t.clone,
+      fields: [
+        { label: t.clonePrompt(sourceName), defaultValue: `${sourceName}-clone` },
+      ],
+      confirmLabel: t.clone,
+      cancelLabel: t.closeGuide,
+      validate: ([destName]) => {
+        if (destName.toLowerCase() === sourceName.toLowerCase()) return t.cloneNameSame;
+        if (isEnvNameExists(destName)) return t.nameExists(destName);
+        return null;
+      },
+      onConfirm: ([destName]) => {
+        setInputModal(null);
+        void runCommand("env-clone", ["--source-prefix", env.path, "--dest-name", destName]);
+      },
+    });
   };
 
   const openExportModal = (env: Environment) => {
@@ -788,16 +596,53 @@ function App() {
 
     if (typeof filePath !== "string") return;
 
-    const newName = prompt(t.importPrompt);
-    if (!newName || !newName.trim()) return;
+    setInputModal({
+      title: t.importEnv,
+      fields: [
+        { label: t.importPrompt, placeholder: "my-imported-env" },
+      ],
+      confirmLabel: t.importEnv,
+      cancelLabel: t.closeGuide,
+      validate: ([name]) => {
+        if (isEnvNameExists(name)) return t.nameExists(name);
+        return null;
+      },
+      onConfirm: ([name]) => {
+        setInputModal(null);
+        void runCommand("env-import", ["--file", filePath, "--name", name]);
+      },
+    });
+  };
 
-    const trimmedName = newName.trim();
-    if (isEnvNameExists(trimmedName)) {
-      await message(t.nameExists(trimmedName), { title: t.importFailTitle });
-      return;
-    }
+  const handleInstallPackage = () => {
+    if (running || !selectedEnvPath) return;
+    setInputModal({
+      title: t.packageInstall,
+      fields: [
+        { label: t.packageInstallPrompt, placeholder: "numpy" },
+        { label: t.packageVersionPrompt, placeholder: "1.24.0", optional: true },
+      ],
+      confirmLabel: t.packageInstall,
+      cancelLabel: t.closeGuide,
+      onConfirm: ([packageName, packageVersion]) => {
+        setInputModal(null);
+        void runCommand("pkg-install", ["--prefix", selectedEnvPath!, "--name", packageName, packageVersion ? "--version" : "", packageVersion], {
+          command: "pkg-install",
+          envPath: selectedEnvPath!,
+        });
+      },
+    });
+  };
 
-    void runCommand("env-import", ["--file", filePath, "--name", trimmedName]);
+  const handleRemovePackage = async (pkg: Package) => {
+    if (running || !selectedEnvPath) return;
+    const confirmed = await confirm(t.packageRemoveConfirm(pkg.name), { title: t.packageRemoveConfirmTitle });
+    if (!confirmed) return;
+
+    void runCommand("pkg-remove", ["--prefix", selectedEnvPath, "--name", pkg.name], {
+      command: "pkg-remove",
+      envPath: selectedEnvPath,
+    });
   };
 
   const handleOpenDiagnostics = async () => {
@@ -818,6 +663,39 @@ function App() {
     if (!success) {
       await message(t.sourceConfigApplyFailed);
     }
+  };
+
+  const handleCopyDiagnostics = () => {
+    if (!diagnosticsInfo) return;
+    const lines = [
+      `Package Manager: ${diagnosticsInfo.package_manager_kind}`,
+      `Executable Path: ${diagnosticsInfo.package_manager_path || "N/A"}`,
+      `Conda Version: ${diagnosticsInfo.conda_version}`,
+      `Python Version: ${diagnosticsInfo.python_version}`,
+      `Root Prefix: ${diagnosticsInfo.root_prefix || "N/A"}`,
+      `Active Environment: ${diagnosticsInfo.active_environment || "N/A"}`,
+      `SSL Verify: ${String(diagnosticsInfo.ssl_verify ?? "N/A")}`,
+      "",
+      "Config Files:",
+      ...diagnosticsInfo.config_files.map((f) => `  - ${f}`),
+      "",
+      "Channels:",
+      ...diagnosticsInfo.channels.map((c) => `  - ${c}`),
+      "",
+      "Proxy:",
+      ...(Object.keys(diagnosticsInfo.proxy_servers).length === 0
+        ? ["  Not configured"]
+        : Object.entries(diagnosticsInfo.proxy_servers).map(([k, v]) => `  ${k}: ${v}`)),
+      "",
+      "Environment Directories:",
+      ...diagnosticsInfo.envs_directories.map((d) => `  - ${d}`),
+      "",
+      "Package Cache:",
+      ...diagnosticsInfo.package_cache_directories.map((d) => `  - ${d}`),
+    ];
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      queueLog(t.diagnosticsCopySuccess);
+    });
   };
 
   const sortedEnvironments = useMemo(() => {
@@ -853,230 +731,55 @@ function App() {
         onExport={handleExportFromModal}
       />
 
+      {inputModal && (
+        <InputModal
+          title={inputModal.title}
+          fields={inputModal.fields}
+          confirmLabel={inputModal.confirmLabel}
+          cancelLabel={inputModal.cancelLabel}
+          validate={inputModal.validate}
+          onConfirm={inputModal.onConfirm}
+          onCancel={() => setInputModal(null)}
+        />
+      )}
+
       {showCondaInstallGuide && (
-        <div className="guide-overlay">
-          <div className="guide-card">
-            <h2>{t.condaMissingTitle}</h2>
-            <p>{t.condaMissingDesc1}</p>
-            <p>{t.condaMissingDesc2}</p>
-            <div className="guide-links">
-              <button className="link-button" onClick={() => openExternalLink("https://github.com/Dekelkai/CondaTool#-独立打包目标condatoolexe")}>{t.installConda}</button>
-              <button className="link-button" onClick={() => openExternalLink("https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html")}>{t.installMiniconda}</button>
-            </div>
-            <div className="guide-actions">
-              <button className="btn btn-primary" onClick={() => setShowCondaInstallGuide(false)}>{t.understood}</button>
-            </div>
-          </div>
-        </div>
+        <CondaMissingModal
+          t={t}
+          onOpenLink={openExternalLink}
+          onClose={() => setShowCondaInstallGuide(false)}
+        />
       )}
 
       {showFeatureGuide && (
-        <div className="guide-overlay">
-          <div className="guide-card">
-            <h2>{t.featureTitle}</h2>
-            <p>{t.featureDesc}</p>
-            <ul className="guide-list">
-              <li>{t.featureItem1}</li>
-              <li>{t.featureItem2}</li>
-              <li>{t.featureItem3}</li>
-              <li>{t.featureItem4}</li>
-              <li>{t.featureItem5}</li>
-            </ul>
-            <p>{t.featureFlow}</p>
-            <div className="guide-actions">
-              <button className="btn btn-primary" onClick={() => setShowFeatureGuide(false)}>{t.closeGuide}</button>
-            </div>
-          </div>
-        </div>
+        <FeatureGuideModal
+          t={t}
+          onClose={() => setShowFeatureGuide(false)}
+        />
       )}
 
       {showDiagnostics && (
-        <div className="guide-overlay">
-          <div className="guide-card diagnostics-card">
-            <div className="diagnostics-head">
-              <h2>{t.diagnosticsTitle}</h2>
-              <button className="btn btn-secondary" onClick={() => void runCommand("diagnostics")} disabled={!!running}>
-                {t.diagnosticsRefresh}
-              </button>
-            </div>
-
-            {!diagnosticsInfo ? (
-              <p>{t.diagnosticsLoading}</p>
-            ) : (
-              <div className="diagnostics-grid">
-                <section className="diagnostics-section">
-                  <h3>{t.diagnosticsPackageManager}</h3>
-                  <dl className="diagnostics-list">
-                    <div>
-                      <dt>{t.diagnosticsPackageManager}</dt>
-                      <dd>{diagnosticsInfo.package_manager_kind}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.diagnosticsPackageManagerPath}</dt>
-                      <dd>{diagnosticsInfo.package_manager_path || t.diagnosticsNone}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.diagnosticsCondaVersion}</dt>
-                      <dd>{diagnosticsInfo.conda_version}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.diagnosticsPythonVersion}</dt>
-                      <dd>{diagnosticsInfo.python_version}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.diagnosticsRootPrefix}</dt>
-                      <dd>{diagnosticsInfo.root_prefix || t.diagnosticsNone}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.diagnosticsActiveEnv}</dt>
-                      <dd>{diagnosticsInfo.active_environment || t.diagnosticsNone}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.diagnosticsSslVerify}</dt>
-                      <dd>{String(diagnosticsInfo.ssl_verify ?? t.diagnosticsNone)}</dd>
-                    </div>
-                  </dl>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.diagnosticsConfigFiles}</h3>
-                  <ul className="diagnostics-items">
-                    {(diagnosticsInfo.config_files.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.config_files).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.diagnosticsChannels}</h3>
-                  <ul className="diagnostics-items">
-                    {(diagnosticsInfo.channels.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.channels).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.diagnosticsProxy}</h3>
-                  {Object.keys(diagnosticsInfo.proxy_servers).length === 0 ? (
-                    <p className="hint">{t.diagnosticsNone}</p>
-                  ) : (
-                    <dl className="diagnostics-list">
-                      {Object.entries(diagnosticsInfo.proxy_servers).map(([key, value]) => (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd>{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.diagnosticsEnvDirs}</h3>
-                  <ul className="diagnostics-items">
-                    {(diagnosticsInfo.envs_directories.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.envs_directories).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.diagnosticsPkgCaches}</h3>
-                  <ul className="diagnostics-items">
-                    {(diagnosticsInfo.package_cache_directories.length === 0 ? [t.diagnosticsNone] : diagnosticsInfo.package_cache_directories).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-              </div>
-            )}
-
-            <div className="guide-actions">
-              <button className="btn btn-primary" onClick={() => setShowDiagnostics(false)}>{t.diagnosticsClose}</button>
-            </div>
-          </div>
-        </div>
+        <DiagnosticsModal
+          t={t}
+          diagnosticsInfo={diagnosticsInfo}
+          running={running}
+          onRefresh={() => void runCommand("diagnostics")}
+          onClose={() => setShowDiagnostics(false)}
+          onCopy={handleCopyDiagnostics}
+        />
       )}
 
       {showSourceConfig && (
-        <div className="guide-overlay">
-          <div className="guide-card diagnostics-card">
-            <div className="diagnostics-head">
-              <h2>{t.sourceConfigTitle}</h2>
-              <button className="btn btn-secondary" onClick={() => void runCommand("source-config-get")} disabled={!!running}>
-                {t.sourceConfigRefresh}
-              </button>
-            </div>
-
-            {!sourceConfigInfo ? (
-              <p>{t.sourceConfigLoading}</p>
-            ) : (
-              <div className="diagnostics-grid">
-                <section className="diagnostics-section">
-                  <h3>{t.sourceConfigPreset}</h3>
-                  <div className="source-preset-actions">
-                    <select value={selectedSourcePreset} onChange={(e) => setSelectedSourcePreset(e.target.value)} disabled={!!running}>
-                      <option value="defaults">{t.sourceConfigDefaultsLabel}</option>
-                      <option value="tuna">{t.sourceConfigTunaLabel}</option>
-                    </select>
-                    <button className="btn btn-primary" onClick={() => void handleApplySourcePreset()} disabled={!!running}>
-                      {t.sourceConfigApply}
-                    </button>
-                  </div>
-                  <dl className="diagnostics-list">
-                    <div>
-                      <dt>{t.sourceConfigCurrentFile}</dt>
-                      <dd>{sourceConfigInfo.config_file}</dd>
-                    </div>
-                    <div>
-                      <dt>{t.sourceConfigPriority}</dt>
-                      <dd>{sourceConfigInfo.channel_priority}</dd>
-                    </div>
-                  </dl>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.sourceConfigChannels}</h3>
-                  <ul className="diagnostics-items">
-                    {(sourceConfigInfo.channels.length === 0 ? [t.diagnosticsNone] : sourceConfigInfo.channels).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.sourceConfigDefaultChannels}</h3>
-                  <ul className="diagnostics-items">
-                    {(sourceConfigInfo.default_channels.length === 0 ? [t.diagnosticsNone] : sourceConfigInfo.default_channels).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="diagnostics-section">
-                  <h3>{t.sourceConfigCustomChannels}</h3>
-                  {Object.keys(sourceConfigInfo.custom_channels).length === 0 ? (
-                    <p className="hint">{t.diagnosticsNone}</p>
-                  ) : (
-                    <dl className="diagnostics-list">
-                      {Object.entries(sourceConfigInfo.custom_channels).map(([key, value]) => (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd>{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                </section>
-              </div>
-            )}
-
-            <div className="guide-actions">
-              <button className="btn btn-primary" onClick={() => setShowSourceConfig(false)}>{t.sourceConfigClose}</button>
-            </div>
-          </div>
-        </div>
+        <SourceConfigModal
+          t={t}
+          sourceConfigInfo={sourceConfigInfo}
+          selectedSourcePreset={selectedSourcePreset}
+          running={running}
+          onPresetChange={setSelectedSourcePreset}
+          onRefresh={() => void runCommand("source-config-get")}
+          onApply={() => void handleApplySourcePreset()}
+          onClose={() => setShowSourceConfig(false)}
+        />
       )}
 
       <div className="app-shell">
@@ -1195,6 +898,11 @@ function App() {
               <span>{selectedEnvName || t.noSelectedEnv}</span>
             </div>
             <div className="panel-tools">
+              <div className="package-actions">
+                <button className="btn btn-primary" onClick={() => void handleInstallPackage()} disabled={!selectedEnvPath || !!running}>
+                  {t.packageInstall}
+                </button>
+              </div>
               <input
                 type="search"
                 placeholder={t.searchPkg}
@@ -1217,6 +925,7 @@ function App() {
                       <th>{t.name}</th>
                       <th>{t.version}</th>
                       <th>{t.channel}</th>
+                      <th>{t.remove}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1225,6 +934,11 @@ function App() {
                         <td>{pkg.name}</td>
                         <td>{pkg.version}</td>
                         <td>{pkg.channel || "-"}</td>
+                        <td>
+                          <button className="btn btn-ghost" onClick={() => void handleRemovePackage(pkg)} disabled={!!running}>
+                            {t.packageRemove}
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

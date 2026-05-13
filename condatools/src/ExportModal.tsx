@@ -9,7 +9,7 @@ interface ExportModalProps {
 }
 
 const InfoTooltip = ({ text }: { text: string }) => (
-  <span title={text} style={{ cursor: 'help', marginLeft: '8px', borderBottom: '1px dotted', color: '#888' }}>
+  <span title={text} className="export-modal-info-tip">
     ?
   </span>
 );
@@ -49,41 +49,34 @@ export const ExportModal: React.FC<ExportModalProps> = ({ envName, isOpen, local
       };
 
   return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(10, 16, 26, 0.45)',
-      display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
-    }}>
-      <div style={{
-        background: '#fff', color: '#152033', padding: '24px', borderRadius: '14px',
-        width: '430px', border: '1px solid #d7e2ef', boxShadow: '0 24px 44px rgba(6, 24, 44, 0.24)'
-      }}>
-        <h2 style={{ marginTop: 0, marginBottom: '24px' }}>{text.title}: {envName}</h2>
+    <div className="guide-overlay">
+      <div className="guide-card export-modal-card">
+        <h2>{text.title}: {envName}</h2>
 
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '8px' }}>{text.format}</label>
-          <div>
-            <label style={{ marginRight: '16px' }}>
+        <div className="export-modal-section">
+          <label className="export-modal-label">{text.format}</label>
+          <div className="export-modal-radio-group">
+            <label className="export-modal-radio">
               <input type="radio" name="format" value="yml" checked={format === 'yml'} onChange={() => setFormat('yml')} />
               {text.yml}
             </label>
-            <label>
+            <label className="export-modal-radio">
               <input type="radio" name="format" value="txt" checked={format === 'txt'} onChange={() => setFormat('txt')} />
               {text.txt}
             </label>
           </div>
         </div>
 
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '12px' }}>{text.advanced}</label>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+        <div className="export-modal-section">
+          <label className="export-modal-label">{text.advanced}</label>
+          <div className="export-modal-checkbox-row">
             <input type="checkbox" id="noBuilds" checked={noBuilds} onChange={(e) => setNoBuilds(e.target.checked)} />
-            <label htmlFor="noBuilds" style={{ marginLeft: '8px' }}>{text.noBuilds}</label>
+            <label htmlFor="noBuilds">{text.noBuilds}</label>
             <InfoTooltip text={text.noBuildsTip} />
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+        <div className="guide-actions">
           <button onClick={onClose} className="btn btn-secondary">{text.cancel}</button>
           <button onClick={handleExportClick} className="btn btn-primary">{text.confirm}</button>
         </div>

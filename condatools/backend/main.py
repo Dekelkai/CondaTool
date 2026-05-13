@@ -13,6 +13,8 @@ from CondaTool_conda.commands import (
     cmd_env_export,
     cmd_env_import,
     cmd_env_clone,
+    cmd_pkg_install,
+    cmd_pkg_remove,
 )
 from CondaTool_conda.utils import set_package_manager_path
 
@@ -37,6 +39,17 @@ def main():
     pkg_parser = sub.add_parser("pkg-list", help="List packages in an environment")
     pkg_parser.add_argument("--prefix", required=True)
     pkg_parser.set_defaults(func=cmd_pkg_list)
+
+    pkg_install_parser = sub.add_parser("pkg-install", help="Install a package into an environment")
+    pkg_install_parser.add_argument("--prefix", required=True)
+    pkg_install_parser.add_argument("--name", required=True)
+    pkg_install_parser.add_argument("--version", required=False)
+    pkg_install_parser.set_defaults(func=cmd_pkg_install)
+
+    pkg_remove_parser = sub.add_parser("pkg-remove", help="Remove a package from an environment")
+    pkg_remove_parser.add_argument("--prefix", required=True)
+    pkg_remove_parser.add_argument("--name", required=True)
+    pkg_remove_parser.set_defaults(func=cmd_pkg_remove)
 
     # Environment management
     create_parser = sub.add_parser("env-create", help="Create a new environment")

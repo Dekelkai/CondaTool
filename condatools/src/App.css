@@ -263,6 +263,12 @@ input {
   border-bottom: 1px solid var(--border);
 }
 
+.package-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
 .panel-tools input {
   width: 100%;
   height: 36px;
@@ -502,6 +508,11 @@ tbody tr:hover {
   gap: 12px;
 }
 
+.diagnostics-head-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .diagnostics-grid {
   margin-top: 16px;
   display: grid;
@@ -588,6 +599,116 @@ tbody tr:hover {
   .log-panel {
     min-height: 340px;
   }
+}
+
+/* ExportModal */
+.export-modal-card {
+  width: min(430px, 100%);
+}
+
+.export-modal-section {
+  margin-bottom: 20px;
+}
+
+.export-modal-label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.export-modal-radio-group {
+  display: flex;
+  gap: 16px;
+}
+
+.export-modal-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.export-modal-radio input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+.export-modal-checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.export-modal-checkbox-row input[type="checkbox"] {
+  accent-color: var(--primary);
+}
+
+.export-modal-info-tip {
+  cursor: help;
+  margin-left: 4px;
+  border-bottom: 1px dotted var(--muted);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* InputModal */
+.input-modal-card {
+  width: min(440px, 100%);
+}
+
+.input-modal-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.input-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-modal-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.input-modal-optional {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.input-modal-input {
+  width: 100%;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+  background: var(--panel);
+  color: var(--text);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.input-modal-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--primary) 70%, var(--border) 30%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent 82%);
+}
+
+.input-modal-input::placeholder {
+  color: var(--muted);
+}
+
+.input-modal-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
 }
 
 @media (max-width: 760px) {
